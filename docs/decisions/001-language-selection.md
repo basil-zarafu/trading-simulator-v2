@@ -98,33 +98,38 @@
 
 ---
 
-## Recommendation
+## Decision
 
-**Primary choice: Rust**
+**CHOICE: Rust** ✅
+
+**Decision Date:** 2026-02-11  
+**Decision Maker:** Stefan (accepting Basil's recommendation)
 
 **Rationale:**
-1. **Correctness**: The type system and borrow checker prevent entire classes of bugs
-2. **Performance**: True parallelism for Monte Carlo sweeps (no GIL)
+1. **Correctness**: The type system and borrow checker prevent entire classes of bugs at compile time
+2. **Performance**: True parallelism for Monte Carlo sweeps (no GIL like Python)
 3. **Maintainability**: Refactoring is safe — if it compiles, it probably works
 4. **Future-proof**: As the codebase grows, Rust's guarantees become more valuable
-5. **Learning**: Stefan can learn Rust alongside me; I can guide and explain
-
-**Secondary choice: Python + mypy** (if Rust learning curve is too steep)
+5. **Monte Carlo**: Memory safety + parallelism = efficient parameter sweeps
 
 ## Migration Strategy
 
-If we choose Rust:
-1. I'll write the core engine in Rust
-2. Python bindings (PyO3) for research/Jupyter integration
-3. Stefan learns Rust gradually by reviewing code and asking questions
-4. Complex algorithms can be prototyped in Python first, then ported
+1. **Basil writes core engine** in Rust (strategy engine, pricing, Monte Carlo)
+2. **Python bindings** (PyO3) for research/Jupyter integration when needed
+3. **Stefan learns Rust gradually** by reviewing code and asking questions
+4. **Complex algorithms** can be prototyped in Python first, then ported
 
-## Decision
+## Learning Resources for Stefan
 
-**Awaiting Stefan's input:**
-- Comfort level with learning Rust?
-- Priority: development speed vs. long-term maintainability?
-- Is desktop app a Phase 1 requirement?
+- **The Book** (official Rust guide): https://doc.rust-lang.org/book/
+- **Rust by Example**: https://doc.rust-lang.org/rust-by-example/
+- **Basil as mentor**: I'll explain every concept, review code together
+
+## Impact on Architecture
+
+- Event sourcing fits naturally with Rust's ownership model
+- Immutable data structures are idiomatic and performant
+- Thread-safe Monte Carlo without runtime overhead
 
 ---
 
