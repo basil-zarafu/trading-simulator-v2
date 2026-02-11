@@ -37,23 +37,41 @@ strategy:
           target: 0.16
     
   exit_conditions:
-    # Any of these triggers exit
+    # Any of these triggers FINAL exit
     - type: profit_target
       pct: 0.50
     
     - type: stop_loss
       pct: 2.00  # 200%
     
-    - type: dte_threshold
-      dte: 7  # Exit at 7 DTE if still open
-    
     - type: expiration  # Always exit at expiration
   
-  # Optional: salvage logic
-  if_not_profitable_at:
-    dte: 7
-    action: roll  # Roll to next month for more credit
-    to_dte: 45
+  # Optional: salvage rolls (can have multiple attempts)
+  salvage:
+    max_attempts: 3  # Up to 3 salvage rolls
+    
+    attempts:
+      - trigger:
+          type: dte_threshold
+          dte: 30  # At 30 DTE, if not profitable
+        action:
+          type: roll
+          to_dte: 45
+          strike_selection: { type: delta, target: 0.20 }  # Adjust to 20 delta
+      
+      - trigger:
+          type: dte_threshold
+          dte: 14  # At 14 DTE, if still not profitable
+        action:
+          type: roll
+          to_dte: 30  # Closer DTE
+          strike_selection: { type: atm }  # Get closer to price
+      
+      - trigger:
+          type: dte_threshold
+          dte: 7  # Final attempt
+        action:
+          type: close  # Take the loss
 ```
 
 ### Type 2: Continuous Rolling Strategy
@@ -473,6 +491,79 @@ roll_conditions:
     to_dte: 1
     strike_selection: { type: atm }  # Recenter to new ATM
 ```
+
+## Extensibility
+
+**Core principle:** The system is designed to add new trigger types and actions without breaking existing strategies.
+
+### Adding New Trigger Types
+
+**Example: Adding a "VIX Spike" trigger**
+
+```rust
+// 1. Define the new trigger
+e enum ExitCondition {
+    // ... existing triggers
+    VixSpike { threshold: f64 },  // New!
+}
+
+// 2. Implement the check
+impl ExitCondition {
+    fn check(&self, state: &PositionState, market: &MarketData) -> bool {
+        match self {
+            // ... existing checks
+            ExitCondition::VixSpike { threshold } => {
+                market.vix > *threshold
+            }
+        }
+    }
+}
+
+// 3. Use in YAML
+// - type: vix_spike
+//   threshold: 30.0
+```
+
+### Adding New Actions
+
+**Example: Adding "Hedge with Long Option" action**
+
+```rust
+enum SalvageAction {
+    // ... existing actions
+    AddHedge { instrument: InstrumentConfig },  // New!
+}
+
+impl ActionExecutor {
+    fn execute(&mut self, action: &SalvageAction) -> Result<()> {
+        match action {
+            // ... existing actions
+            SalvageAction::AddHedge { instrument } => {
+                // Open protective leg
+            }
+        }
+    }
+}
+```
+
+### Plugin Architecture (Phase 3)
+
+For truly custom logic without modifying core code:
+
+```rust
+trait TriggerPlugin {
+    fn name(&self) -> &str;
+    fn check(&self, state: &PositionState, market: &MarketData) -> bool;
+    fn validate(&self, config: &serde_yaml::Value) -> Result<()>;
+}
+
+// Load plugins at startup
+let plugins = load_plugins_from_directory("./plugins/")?;
+```
+
+**This means:** As we discover new rolling strategies, we can add them without redesigning the system.
+
+---
 
 ## Implementation Approach
 
