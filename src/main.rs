@@ -338,6 +338,35 @@ fn open_position_with_pricing(
                 let call = config.strike_config.round_to_strike(atm + offset);
                 (put, call)
             }
+            selection if selection.starts_with("delta_") => {
+                // Delta-based strike selection
+                // Format: "delta_put_30" or "delta_call_16"
+                let parts: Vec<&str> = selection.split('_').collect();
+                if parts.len() >= 3 {
+                    let option_type = parts[1]; // "put" or "call"
+                    let target_delta: f64 = parts[2].parse().unwrap_or(30.0) / 100.0;
+                    
+                    let strike = find_strike_by_delta(
+                        current_price,
+                        time_to_expiry,
+                        config.simulation.risk_free_rate,
+                        config.simulation.volatility,
+                        option_type == "call",
+                        target_delta,
+                        &config.strike_config,
+                    );
+                    
+                    if option_type == "put" {
+                        (strike, config.strike_config.round_to_strike(current_price))
+                    } else {
+                        (config.strike_config.round_to_strike(current_price), strike)
+                    }
+                } else {
+                    // Fallback to ATM
+                    let atm = config.strike_config.round_to_strike(current_price);
+                    (atm, atm)
+                }
+            }
             _ => {
                 // ATM - round to nearest valid strike
                 let atm = config.strike_config.round_to_strike(current_price);
@@ -421,6 +450,54 @@ fn open_position_with_pricing(
         put_greeks,
         call_greeks,
     }
+}
+
+/// Find strike price closest to target delta
+/// 
+/// Searches through available strikes to find the one with delta closest to target.
+/// For puts, target delta is typically negative (e.g., -0.30 for 30 delta put).
+/// For calls, target delta is positive (e.g., 0.30 for 30 delta call).
+fn find_strike_by_delta(
+    underlying: f64,
+    time_to_expiry: f64,
+    risk_free_rate: f64,
+    volatility: f64,
+    is_call: bool,
+    target_delta: f64,
+    strike_config: &config::StrikeConfig,
+) -> f64 {
+    let atm = strike_config.round_to_strike(underlying);
+    let mut best_strike = atm;
+    let mut best_delta_diff = f64::INFINITY;
+    
+    // Search up to 20 strikes in each direction
+    for i in -20..=20 {
+        let strike = atm + (i as f64) * strike_config.tick_size;
+        if strike <= 0.0 {
+            continue;
+        }
+        
+        let greeks = Black76::greeks(
+            underlying,
+            strike,
+            time_to_expiry,
+            risk_free_rate,
+            volatility,
+            is_call,
+        );
+        
+        // For puts, we want delta close to -target (e.g., -0.30)
+        // For calls, we want delta close to +target (e.g., 0.30)
+        let target = if is_call { target_delta } else { -target_delta };
+        let delta_diff = (greeks.delta - target).abs();
+        
+        if delta_diff < best_delta_diff {
+            best_delta_diff = delta_diff;
+            best_strike = strike;
+        }
+    }
+    
+    best_strike
 }
 
 /// Calculate close value (intrinsic at expiry)

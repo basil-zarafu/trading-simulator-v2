@@ -120,12 +120,27 @@ impl StrikeConfig {
         (price / self.tick_size).round() * self.tick_size
     }
     
+    /// Round down to nearest strike (for puts when going OTM)
+    pub fn round_down_to_strike(&self, price: f64) -> f64 {
+        (price / self.tick_size).floor() * self.tick_size
+    }
+    
+    /// Round up to nearest strike (for calls when going OTM)
+    pub fn round_up_to_strike(&self, price: f64) -> f64 {
+        (price / self.tick_size).ceil() * self.tick_size
+    }
+    
     /// Get strikes for a straddle given underlying price
     pub fn get_straddle_strikes(&self, underlying: f64, offset: f64) -> (f64, f64) {
         let atm = self.round_to_strike(underlying);
         let put_strike = self.round_to_strike(atm - offset);
         let call_strike = self.round_to_strike(atm + offset);
         (put_strike, call_strike)
+    }
+    
+    /// Find nearest available strike
+    pub fn nearest_strike(&self, price: f64) -> f64 {
+        self.round_to_strike(price)
     }
 }
 

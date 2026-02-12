@@ -1,0 +1,38 @@
+# Delta-Based Strike Selection Configuration
+# 16 delta strangle for /CL (short vol strategy)
+
+simulation:
+  days: 30
+  initial_price: 75.0
+  drift: 0.0
+  volatility: 0.30
+  seed: 42
+  risk_free_rate: 0.05
+  contract_multiplier: 1000
+
+strategy:
+  strategy_type: strangle
+  entry_dte: 1
+  entry_time: "15:00"
+  roll_time: "14:00"
+  strike_selection: "delta_put_16"  # 16 delta put (and ATM call for this example)
+  # For a full strangle, you'd use custom logic or specify both legs separately
+  strike_offset: 0.0
+  
+  roll_triggers:
+    - trigger_type: time
+      value: 14.0
+      legs: both
+
+product:
+  symbol: "/CL"
+  tick_size: 0.01
+  point_value: 1000.0
+  trading_hours:
+    open: "09:00"
+    close: "17:00"
+    option_expiry: "14:30"
+
+strike_config:
+  tick_size: 0.25
+  roll_type: "recenter"
