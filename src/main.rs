@@ -17,6 +17,7 @@ mod config;
 mod events;
 mod prices;
 mod pricing;
+mod triggers;
 
 use calendar::{Calendar, Day, TimeOfDay};
 use config::Config;
@@ -37,7 +38,9 @@ fn parse_time(time_str: &str) -> TimeOfDay {
 #[derive(Debug)]
 struct PositionTracking {
     position_id: PositionId,
+    entry_day: Day,
     expiration_day: Day,
+    entry_price: f64,
     put_strike: f64,
     call_strike: f64,
     put_entry_premium: f64,
@@ -455,7 +458,9 @@ fn open_position_with_pricing(
 
     PositionTracking {
         position_id,
+        entry_day,
         expiration_day,
+        entry_price: current_price,
         put_strike,
         call_strike,
         put_entry_premium: put_premium,
