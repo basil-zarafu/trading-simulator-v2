@@ -91,6 +91,20 @@ strike_config:
   - Minimal impact on short-dated options (1DTE)
   - More significant for longer DTE (70DTE protection)
 
+### `volatility_risk_premium` (optional, default: 0.0)
+- **Type:** Float
+- **Description:** Volatility Risk Premium - the edge option sellers capture
+- **Example:** `volatility_risk_premium: 0.05` for 5% VRP
+- **Formula:** `Implied Vol = Realized Vol + VRP`
+- **Notes:**
+  - **CRITICAL for option sellers** - this is where profit comes from
+  - Realized vol drives price movements (GBM simulation)
+  - Implied vol (realized + VRP) drives option prices
+  - Example: 30% realized + 5% VRP = 35% implied
+  - Historical VRP is typically 2-5% for most underlyings
+  - Higher VRP = higher option premiums = more income for sellers
+  - Set to 0.0 to disable (options priced at realized vol)
+
 ### `contract_multiplier` (optional, default: 1000.0)
 - **Type:** Float
 - **Description:** Number of units per contract
@@ -479,6 +493,12 @@ for strike in (ATM - 20 ticks) to (ATM + 20 ticks):
 ---
 
 ## Changelog
+
+### 2026-02-12 (Phase 5b - VRP)
+- Added Volatility Risk Premium (VRP) parameter
+- Price path uses realized vol, options priced at implied vol
+- Implied Vol = Realized Vol + VRP
+- Critical for option seller edge modeling
 
 ### 2026-02-12 (Phase 5)
 - Added delta-based strike selection
