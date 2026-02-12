@@ -405,24 +405,33 @@
         }
         
         function displayResults(result) {
-            // Update stats
-            document.getElementById('netPnl').textContent = 
-                (result.netPnl >= 0 ? '+$' : '-$') + Math.abs(result.netPnl).toLocaleString();
-            document.getElementById('netPnl').className = 'stat-value ' + (result.netPnl >= 0 ? 'positive' : 'negative');
+            // Update stats (using snake_case from Rust API)
+            const netPnl = result.net_pnl || 0;
+            const positionCount = result.position_count || 0;
+            const winRate = result.win_rate || 0;
+            const finalPrice = result.final_price || 0;
             
-            document.getElementById('positionCount').textContent = result.positionCount;
-            document.getElementById('winRate').textContent = result.winRate + '%';
-            document.getElementById('finalPrice').textContent = '$' + result.finalPrice.toFixed(2);
+            document.getElementById('netPnl').textContent = 
+                (netPnl >= 0 ? '+$' : '-$') + Math.abs(netPnl).toLocaleString();
+            document.getElementById('netPnl').className = 'stat-value ' + (netPnl >= 0 ? 'positive' : 'negative');
+            
+            document.getElementById('positionCount').textContent = positionCount;
+            document.getElementById('winRate').textContent = winRate.toFixed(1) + '%';
+            document.getElementById('finalPrice').textContent = '$' + finalPrice.toFixed(2);
             
             // Update log
             const log = document.getElementById('tradeLog');
             log.innerHTML = '';
-            result.trades.forEach(trade => {
-                const entry = document.createElement('div');
-                entry.className = `log-entry ${trade.type}`;
-                entry.textContent = trade.message;
-                log.appendChild(entry);
-            });
+            if (result.trades && result.trades.length > 0) {
+                result.trades.forEach(trade => {
+                    const entry = document.createElement('div');
+                    entry.className = `log-entry ${trade.trade_type}`;
+                    entry.textContent = trade.message;
+                    log.appendChild(entry);
+                });
+            } else {
+                log.innerHTML = '<div class="log-entry">No trades recorded</div>';
+            }
         }
         
         // Call local web API
