@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trading Simulator V2</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+        }
+        
+        .header {
+            background: #16213e;
+            padding: 20px 30px;
+            border-bottom: 2px solid #0f3460;
+        }
+        
+        .header h1 {
+            font-size: 24px;
+            color: #e94560;
+        }
+        
+        .header p {
+            color: #888;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+        
+        .container {
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            gap: 20px;
+            padding: 20px;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+        
+        .sidebar {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 20px;
+            height: fit-content;
+        }
+        
+        .sidebar h2 {
+            font-size: 16px;
+            color: #e94560;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .control-group {
+            margin-bottom: 20px;
+        }
+        
+        .control-group label {
+            display: block;
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+        }
+        
+        .control-group input[type="number"],
+        .control-group input[type="text"],
+        .control-group select {
+            width: 100%;
+            padding: 10px 12px;
+            background: #0f3460;
+            border: 1px solid #1a1a2e;
+            border-radius: 6px;
+            color: #fff;
+            font-size: 14px;
+        }
+        
+        .control-group input:focus,
+        .control-group select:focus {
+            outline: none;
+            border-color: #e94560;
+        }
+        
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .slider-container input[type="range"] {
+            flex: 1;
+        }
+        
+        .slider-value {
+            min-width: 50px;
+            text-align: right;
+            font-family: monospace;
+            color: #e94560;
+        }
+        
+        .btn {
+            width: 100%;
+            padding: 14px;
+            background: #e94560;
+            border: none;
+            border-radius: 8px;
+            color: #fff;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .btn:hover {
+            background: #ff6b6b;
+        }
+        
+        .btn:disabled {
+            background: #444;
+            cursor: not-allowed;
+        }
+        
+        .main-content {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        .panel {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 20px;
+        }
+        
+        .panel h3 {
+            font-size: 14px;
+            color: #888;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+        }
+        
+        .stat-card {
+            background: #0f3460;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .stat-label {
+            font-size: 11px;
+            color: #888;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+        
+        .stat-value {
+            font-size: 24px;
+            font-weight: 600;
+            color: #fff;
+        }
+        
+        .stat-value.positive {
+            color: #4ade80;
+        }
+        
+        .stat-value.negative {
+            color: #ef4444;
+        }
+        
+        .chart-container {
+            height: 300px;
+            background: #0f3460;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #666;
+        }
+        
+        .log-container {
+            height: 250px;
+            background: #0f3460;
+            border-radius: 8px;
+            padding: 15px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            line-height: 1.6;
+        }
+        
+        .log-entry {
+            padding: 4px 0;
+            border-bottom: 1px solid #1a1a2e;
+        }
+        
+        .log-entry.open {
+            color: #4ade80;
+        }
+        
+        .log-entry.close {
+            color: #e94560;
+        }
+        
+        .log-entry.hold {
+            color: #888;
+        }
+        
+        /* Toggle switch */
+        .toggle {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .toggle input[type="checkbox"] {
+            width: 40px;
+            height: 20px;
+            appearance: none;
+            background: #444;
+            border-radius: 20px;
+            position: relative;
+            cursor: pointer;
+        }
+        
+        .toggle input[type="checkbox"]:checked {
+            background: #e94560;
+        }
+        
+        .toggle input[type="checkbox"]::after {
+            content: '';
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            background: #fff;
+            border-radius: 50%;
+            top: 2px;
+            left: 2px;
+            transition: left 0.2s;
+        }
+        
+        .toggle input[type="checkbox"]:checked::after {
+            left: 22px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🛢️ Trading Simulator V2</h1>
+        <p>Oil Futures (/CL) Options Strategy Backtester</p>
+    </div>
+    
+    <div class="container">
+        <div class="sidebar">
+            <h2>Configuration</h2>
+            
+            <div class="control-group">
+                <label>Strategy Type</label>
+                <select id="strategyType">
+                    <option value="straddle">1DTE Straddle</option>
+                    <option value="long_protection">Long Protection (70DTE)</option>
+                    <option value="combined">Combined Strategy</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label>Simulation Days</label>
+                <div class="slider-container">
+                    <input type="range" id="simDays" min="30" max="252" value="126">
+                    <span class="slider-value" id="simDaysValue">126</span>
+                </div>
+            </div>
+            
+            <div class="control-group">
+                <label>Initial Price ($)</label>
+                <input type="number" id="initialPrice" value="75.0" step="0.01">
+            </div>
+            
+            <div class="control-group">
+                <label>Volatility (%)</label>
+                <div class="slider-container">
+                    <input type="range" id="volatility" min="10" max="60" value="30">
+                    <span class="slider-value" id="volatilityValue">30%</span>
+                </div>
+            </div>
+            
+            <div class="control-group">
+                <label>VRP - Volatility Risk Premium (%)</label>
+                <div class="slider-container">
+                    <input type="range" id="vrp" min="0" max="15" value="5">
+                    <span class="slider-value" id="vrpValue">5%</span>
+                </div>
+            </div>
+            
+            <div class="control-group">
+                <label>Random Seed</label>
+                <input type="number" id="seed" value="42">
+            </div>
+            
+            <div class="control-group toggle">
+                <input type="checkbox" id="enableLongLeg" checked>
+                <label for="enableLongLeg">Enable Long Protection</label>
+            </div>
+            
+            <button class="btn" id="runBtn" onclick="runSimulation()">▶ Run Simulation</button>
+        </div>
+        
+        <div class="main-content">
+            <div class="panel">
+                <h3>Performance Summary</h3>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-label">Net P&L</div>
+                        <div class="stat-value positive" id="netPnl">+$0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Positions</div>
+                        <div class="stat-value" id="positionCount">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Win Rate</div>
+                        <div class="stat-value" id="winRate">0%</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Final Price</div>
+                        <div class="stat-value" id="finalPrice">$0.00</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="panel">
+                <h3>P&L Chart</h3>
+                <div class="chart-container">
+                    <span>Chart will appear here after simulation</span>
+                </div>
+            </div>
+            
+            <div class="panel">
+                <h3>Trade Log</h3>
+                <div class="log-container" id="tradeLog">
+                    <div class="log-entry">Ready to run simulation...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Update slider values
+        document.getElementById('simDays').addEventListener('input', function() {
+            document.getElementById('simDaysValue').textContent = this.value;
+        });
+        
+        document.getElementById('volatility').addEventListener('input', function() {
+            document.getElementById('volatilityValue').textContent = this.value + '%';
+        });
+        
+        document.getElementById('vrp').addEventListener('input', function() {
+            document.getElementById('vrpValue').textContent = this.value + '%';
+        });
+        
+        async function runSimulation() {
+            const btn = document.getElementById('runBtn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Running...';
+            
+            // Get configuration
+            const config = {
+                days: parseInt(document.getElementById('simDays').value),
+                initialPrice: parseFloat(document.getElementById('initialPrice').value),
+                volatility: parseInt(document.getElementById('volatility').value) / 100,
+                vrp: parseInt(document.getElementById('vrp').value) / 100,
+                seed: parseInt(document.getElementById('seed').value),
+                strategy: document.getElementById('strategyType').value,
+                enableLongLeg: document.getElementById('enableLongLeg').checked
+            };
+            
+            // Clear log
+            const log = document.getElementById('tradeLog');
+            log.innerHTML = '<div class="log-entry">Starting simulation...</div>';
+            
+            // Call Rust backend
+            try {
+                const result = await invoke('run_simulation', { config });
+                displayResults(result);
+            } catch (error) {
+                log.innerHTML += `<div class="log-entry" style="color: #ef4444;">Error: ${error}</div>`;
+            }
+            
+            btn.disabled = false;
+            btn.textContent = '▶ Run Simulation';
+        }
+        
+        function displayResults(result) {
+            // Update stats
+            document.getElementById('netPnl').textContent = 
+                (result.netPnl >= 0 ? '+$' : '-$') + Math.abs(result.netPnl).toLocaleString();
+            document.getElementById('netPnl').className = 'stat-value ' + (result.netPnl >= 0 ? 'positive' : 'negative');
+            
+            document.getElementById('positionCount').textContent = result.positionCount;
+            document.getElementById('winRate').textContent = result.winRate + '%';
+            document.getElementById('finalPrice').textContent = '$' + result.finalPrice.toFixed(2);
+            
+            // Update log
+            const log = document.getElementById('tradeLog');
+            log.innerHTML = '';
+            result.trades.forEach(trade => {
+                const entry = document.createElement('div');
+                entry.className = `log-entry ${trade.type}`;
+                entry.textContent = trade.message;
+                log.appendChild(entry);
+            });
+        }
+        
+        // Placeholder for Tauri invoke
+        async function invoke(cmd, args) {
+            // This will be replaced by actual Tauri invoke
+            console.log('Invoke:', cmd, args);
+            
+            // Return mock data for now
+            return new Promise(resolve => {
+                setTimeout(() => {
+                    resolve({
+                        netPnl: 15432,
+                        positionCount: 42,
+                        winRate: 68,
+                        finalPrice: 89.45,
+                        trades: [
+                            { type: 'open', message: 'Day 0: OPENED position 1 at 15:00 | Strikes: Put $75.00 Call $75.00 | $1.32 per barrel' },
+                            { type: 'close', message: 'Day 1: CLOSED position 1 at 14:00 | P&L: $583 (TimeTrigger)' },
+                            { type: 'open', message: 'Day 1: OPENED position 2 at 14:00 | Strikes: Put $75.75 Call $75.75 | $1.33 per barrel' },
+                            { type: 'close', message: 'Day 2: CLOSED position 2 at 14:00 | P&L: $579 (TimeTrigger)' },
+                        ]
+                    });
+                }, 1000);
+            });
+        }
+    </script>
+</body>
+</html>
