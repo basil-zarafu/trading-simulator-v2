@@ -28,6 +28,7 @@ const ENTRY_TIME: TimeOfDay = 15 * 60;       // 15:00
 const ROLL_TIME: TimeOfDay = 14 * 60;        // 14:00
 const EXPIRY_TIME: TimeOfDay = 14 * 60 + 30; // 14:30
 const RISK_FREE_RATE: f64 = 0.05;            // 5% annual
+const CONTRACT_MULTIPLIER: f64 = 1000.0;     // /CL = 1000 barrels per contract
 
 /// Simulation parameters
 #[derive(Debug)]
@@ -130,11 +131,12 @@ fn main() {
                 let call_close = calculate_close_value(current_price, pos.call_strike, true);
                 
                 let position_pnl = (pos.put_entry_premium + pos.call_entry_premium) - (put_close + call_close);
+                let position_pnl_dollars = position_pnl * CONTRACT_MULTIPLIER;
                 pnl_summary.total_premium_paid += put_close + call_close;
                 
                 print!("Day {} ({}): Price ${:.2} | ", day, date_str, current_price);
-                println!("CLOSED position {} at 14:00 | P&L: ${:.2}", 
-                         pos.position_id.0, position_pnl);
+                println!("CLOSED position {} at 14:00 | P&L: ${:.0} ({:.2} x {})", 
+                         pos.position_id.0, position_pnl_dollars, position_pnl, CONTRACT_MULTIPLIER as u32);
 
                 let close_event = Event::PositionClosed {
                     position_id: pos.position_id,
@@ -157,11 +159,10 @@ fn main() {
                     current_price,
                     sim_config.volatility,
                 );
-                println!("  -> OPENED position {} at 14:00 | Put: ${:.2} Call: ${:.2} | Total: ${:.2}",
-                         new_pos.position_id.0, 
-                         new_pos.put_entry_premium, 
-                         new_pos.call_entry_premium,
-                         new_pos.put_entry_premium + new_pos.call_entry_premium);
+                let new_total = new_pos.put_entry_premium + new_pos.call_entry_premium;
+                let new_total_dollars = new_total * CONTRACT_MULTIPLIER;
+                println!("  -> OPENED position {} at 14:00 | ${:.2} per barrel (${:.0} total)",
+                         new_pos.position_id.0, new_total, new_total_dollars);
                 print_greeks(&new_pos);
 
                 active_position = Some(new_pos);
@@ -181,13 +182,11 @@ fn main() {
                 sim_config.volatility,
             );
             
+            let total_premium = pos.put_entry_premium + pos.call_entry_premium;
+            let total_premium_dollars = total_premium * CONTRACT_MULTIPLIER;
             print!("Day {} ({}): Price ${:.2} | ", day, date_str, current_price);
-            println!("OPENED position {} at 15:00 | Put: ${:.2} Call: ${:.2} | Total: ${:.2}",
-                     pos.position_id.0,
-                     pos.put_entry_premium,
-                     pos.call_entry_premium,
-                     pos.put_entry_premium + pos.call_entry_premium);
-            print_greeks(&pos);
+            println!("OPENED position {} at 15:00 | ${:.2} per barrel (${:.0} total)",
+                     pos.position_id.0, total_premium, total_premium_dollars);
 
             active_position = Some(pos);
         } else {
@@ -204,8 +203,9 @@ fn main() {
             let entry_value = pos.put_entry_premium + pos.call_entry_premium;
             let unrealized_pnl = entry_value - current_value;
             
-            println!("Day {} ({}): Price ${:.2} | Holding pos {} | DTE: {} | Unrealized P&L: ${:.2}",
-                     day, date_str, current_price, pos.position_id.0, remaining_dte, unrealized_pnl);
+            let unrealized_pnl_dollars = unrealized_pnl * CONTRACT_MULTIPLIER;
+            println!("Day {} ({}): Price ${:.2} | Holding pos {} | DTE: {} | Unrealized P&L: ${:.0}",
+                     day, date_str, current_price, pos.position_id.0, remaining_dte, unrealized_pnl_dollars);
         }
     }
 
@@ -214,9 +214,16 @@ fn main() {
     println!("SIMULATION SUMMARY");
     println!("{}", "=".repeat(60));
     println!("Total positions opened: {}", pnl_summary.position_count);
-    println!("Total premium collected: ${:.2}", pnl_summary.total_premium_collected);
-    println!("Total premium paid: ${:.2}", pnl_summary.total_premium_paid);
-    println!("Net P&L: ${:.2}", pnl_summary.total_premium_collected - pnl_summary.total_premium_paid);
+    println!("Total premium collected: ${:.2} per barrel (${:.0} total)", 
+             pnl_summary.total_premium_collected, 
+             pnl_summary.total_premium_collected * CONTRACT_MULTIPLIER);
+    println!("Total premium paid: ${:.2} per barrel (${:.0} total)", 
+             pnl_summary.total_premium_paid,
+             pnl_summary.total_premium_paid * CONTRACT_MULTIPLIER);
+    let net_pnl = pnl_summary.total_premium_collected - pnl_summary.total_premium_paid;
+    println!("Net P&L: ${:.2} per barrel (${:.0} total)", 
+             net_pnl, net_pnl * CONTRACT_MULTIPLIER);
+    println!("Contract multiplier: {} barrels", CONTRACT_MULTIPLIER as u32);
     println!("Final underlying price: ${:.2}", 
              price_path.last().map(|(_, p)| *p).unwrap_or(sim_config.initial_price));
 }
