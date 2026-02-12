@@ -1,0 +1,41 @@
+# Trading Simulator V2 Configuration
+# 1DTE Straddle Strategy for /CL Oil Futures
+
+simulation:
+  days: 30                    # Number of trading days to simulate
+  initial_price: 75.0         # Starting price for /CL
+  drift: 0.0                  # Annual drift (0 = no directional bias)
+  volatility: 0.30            # Annual volatility (30%)
+  seed: 42                    # Random seed for reproducible results
+  risk_free_rate: 0.05        # Risk-free rate (5%)
+  contract_multiplier: 1000   # /CL contracts = 1000 barrels
+
+strategy:
+  strategy_type: straddle     # Strategy type: straddle, strangle, etc.
+  entry_dte: 1                # Days to expiration at entry (1DTE)
+  entry_time: "15:00"         # Time to enter position
+  roll_time: "14:00"          # Time to roll position next day
+  strike_selection: ATM       # Strike selection: ATM, OTM
+  strike_offset: 0.0          # Points OTM (0 for ATM)
+  
+  roll_triggers:
+    - trigger_type: time
+      value: 14.0             # Roll at 14:00
+      legs: both
+    # Uncomment to add profit target:
+    # - trigger_type: profit_target
+    #   value: 0.50             # 50% profit target
+    #   legs: both
+    # Uncomment to add DTE-based roll:
+    # - trigger_type: dte
+    #   value: 0.5              # Roll when DTE <= 0.5
+    #   legs: both
+
+product:
+  symbol: "/CL"               # Product symbol
+  tick_size: 0.01             # Minimum price increment
+  point_value: 1000.0         # Dollar value per point
+  trading_hours:
+    open: "09:00"             # Market open (NY time)
+    close: "17:00"            # Market close (NY time)
+    option_expiry: "14:30"    # Options expiration time

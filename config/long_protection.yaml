@@ -1,0 +1,39 @@
+# Long Protection Configuration
+# 70 DTE puts with recentering at PT14%
+
+simulation:
+  days: 200                  # Longer simulation for long protection
+  initial_price: 75.0
+  drift: 0.0
+  volatility: 0.30
+  seed: 42
+  risk_free_rate: 0.05
+  contract_multiplier: 1000
+
+strategy:
+  strategy_type: strangle    # Long puts + short straddles
+  entry_dte: 70              # 70 DTE for long protection
+  entry_time: "15:00"
+  roll_time: "14:00"
+  strike_selection: OTM
+  strike_offset: 3.0         # 3 points OTM for long puts
+  
+  roll_triggers:
+    - trigger_type: dte
+      value: 28.0             # Roll when DTE <= 28
+      legs: long
+    - trigger_type: profit_target
+      value: 0.14              # 14% profit target for recentering
+      legs: long
+    - trigger_type: time
+      value: 14.0
+      legs: short
+
+product:
+  symbol: "/CL"
+  tick_size: 0.01
+  point_value: 1000.0
+  trading_hours:
+    open: "09:00"
+    close: "17:00"
+    option_expiry: "14:30"
