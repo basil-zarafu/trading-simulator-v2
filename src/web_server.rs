@@ -133,10 +133,11 @@ fn extract_summary(output: &str) -> (f64, u32, f64) {
     for line in output.lines() {
         if line.contains("Net P&L:") {
             // Extract total P&L value (in parentheses)
-            // Format: "Net P&L: $13.44 per barrel ($13441 total)"
-            if let Some(start) = line.find("($") {
-                if let Some(end) = line[start..].find(" total") {
-                    let val = &line[start+2..start+end];
+            // Format: "Net P&L: $90.10 per barrel ($90097 total)"
+            // Find the value in parentheses before "total"
+            if let Some(paren_start) = line.rfind("($") {
+                if let Some(paren_end) = line.rfind(" total)") {
+                    let val = &line[paren_start+2..paren_end];
                     net_pnl = val.replace(",", "").parse().unwrap_or(0.0);
                 }
             }
@@ -147,9 +148,10 @@ fn extract_summary(output: &str) -> (f64, u32, f64) {
                 .unwrap_or(0);
         }
         if line.contains("Final underlying price:") {
-            final_price = line.split('$').nth(1)
-                .and_then(|s| s.trim().parse().ok())
-                .unwrap_or(0.0);
+            // Format: "Final underlying price: $238.79"
+            if let Some(dollar_idx) = line.rfind('$') {
+                final_price = line[dollar_idx+1..].trim().parse().unwrap_or(0.0);
+            }
         }
     }
     
