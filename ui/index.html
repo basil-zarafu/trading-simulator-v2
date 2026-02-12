@@ -378,15 +378,14 @@
             btn.disabled = true;
             btn.textContent = '⏳ Running...';
             
-            // Get configuration
+            // Get configuration (snake_case to match Rust struct)
             const config = {
                 days: parseInt(document.getElementById('simDays').value),
-                initialPrice: parseFloat(document.getElementById('initialPrice').value),
+                initial_price: parseFloat(document.getElementById('initialPrice').value),
                 volatility: parseInt(document.getElementById('volatility').value) / 100,
                 vrp: parseInt(document.getElementById('vrp').value) / 100,
                 seed: parseInt(document.getElementById('seed').value),
-                strategy: document.getElementById('strategyType').value,
-                enableLongLeg: document.getElementById('enableLongLeg').checked
+                strategy: document.getElementById('strategyType').value
             };
             
             // Clear log
