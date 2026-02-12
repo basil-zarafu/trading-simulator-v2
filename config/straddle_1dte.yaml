@@ -33,9 +33,13 @@ strategy:
 
 product:
   symbol: "/CL"               # Product symbol
-  tick_size: 0.01             # Minimum price increment
+  tick_size: 0.01             # Minimum price increment for underlying
   point_value: 1000.0         # Dollar value per point
   trading_hours:
     open: "09:00"             # Market open (NY time)
     close: "17:00"            # Market close (NY time)
     option_expiry: "14:30"    # Options expiration time
+
+strike_config:
+  tick_size: 0.25             # Strike increment (0.25 for /CL, 1.0 for SPY, 5.0 for SPX)
+  roll_type: "recenter"       # "recenter" (to ATM) or "same_strikes" (keep old strikes)

@@ -16,6 +16,9 @@ pub struct Config {
     /// Product-specific settings (optional overrides)
     #[serde(default)]
     pub product: Option<ProductConfig>,
+    /// Strike configuration
+    #[serde(default = "default_strike_config")]
+    pub strike_config: StrikeConfig,
 }
 
 /// Simulation parameters
@@ -100,6 +103,32 @@ pub struct TradingHoursConfig {
     pub option_expiry: String,
 }
 
+/// Strike configuration for a product
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StrikeConfig {
+    /// Strike tick size (0.25 for /CL, 1.0 for SPY, 5.0 for SPX)
+    #[serde(default = "default_strike_tick_size")]
+    pub tick_size: f64,
+    /// Roll type: "recenter" (to ATM) or "same_strikes" (keep old strikes)
+    #[serde(default = "default_roll_type")]
+    pub roll_type: String,
+}
+
+impl StrikeConfig {
+    /// Round a price to the nearest valid strike
+    pub fn round_to_strike(&self, price: f64) -> f64 {
+        (price / self.tick_size).round() * self.tick_size
+    }
+    
+    /// Get strikes for a straddle given underlying price
+    pub fn get_straddle_strikes(&self, underlying: f64, offset: f64) -> (f64, f64) {
+        let atm = self.round_to_strike(underlying);
+        let put_strike = self.round_to_strike(atm - offset);
+        let call_strike = self.round_to_strike(atm + offset);
+        (put_strike, call_strike)
+    }
+}
+
 impl Config {
     /// Load configuration from a YAML file
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, ConfigError> {
@@ -146,6 +175,10 @@ impl Config {
                     option_expiry: "14:30".to_string(),
                 },
             }),
+            strike_config: StrikeConfig {
+                tick_size: 0.25,
+                roll_type: "recenter".to_string(),
+            },
         }
     }
 
@@ -247,6 +280,21 @@ fn default_strike_selection() -> String {
 
 fn default_legs() -> String {
     "both".to_string()
+}
+
+fn default_strike_config() -> StrikeConfig {
+    StrikeConfig {
+        tick_size: 0.25,
+        roll_type: "recenter".to_string(),
+    }
+}
+
+fn default_strike_tick_size() -> f64 {
+    0.25
+}
+
+fn default_roll_type() -> String {
+    "recenter".to_string()
 }
 
 #[cfg(test)]

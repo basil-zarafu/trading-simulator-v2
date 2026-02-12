@@ -109,6 +109,8 @@ fn main() {
     println!("  Entry time: {}", config.strategy.entry_time);
     println!("  Roll time: {}", config.strategy.roll_time);
     println!("  Strike selection: {}", config.strategy.strike_selection);
+    println!("  Strike tick size: ${:.2}", config.strike_config.tick_size);
+    println!("  Roll type: {}", config.strike_config.roll_type);
     if config.strategy.strike_offset > 0.0 {
         println!("  Strike offset: {} points", config.strategy.strike_offset);
     }
@@ -169,7 +171,8 @@ fn main() {
                 };
                 event_store.append(close_event);
 
-                // Open new position
+                // Open new position - check roll type
+                let use_same_strikes = config.strike_config.roll_type == "same_strikes";
                 let new_pos = open_position_with_pricing(
                     &calendar,
                     &mut event_store,
@@ -178,15 +181,24 @@ fn main() {
                     day,
                     roll_time,
                     current_price,
+                    if use_same_strikes {
+                        Some((pos.put_strike, pos.call_strike))
+                    } else {
+                        None
+                    },
                 );
                 let new_total = new_pos.put_entry_premium + new_pos.call_entry_premium;
                 let new_total_dollars = new_total * config.simulation.contract_multiplier;
+                let roll_type_str = if use_same_strikes { " (same strikes)" } else { "" };
                 println!(
-                    "  -> OPENED position {} at {} | ${:.2} per barrel (${:.0} total)",
+                    "  -> OPENED position {} at {} | Strikes: Put ${:.2} Call ${:.2} | ${:.2} per barrel (${:.0} total){}",
                     new_pos.position_id.0,
                     &config.strategy.roll_time,
+                    new_pos.put_strike,
+                    new_pos.call_strike,
                     new_total,
-                    new_total_dollars
+                    new_total_dollars,
+                    roll_type_str
                 );
                 print_greeks(&new_pos);
 
@@ -205,15 +217,18 @@ fn main() {
                 day,
                 entry_time,
                 current_price,
+                None, // No strike override for new positions
             );
 
             let total_premium = pos.put_entry_premium + pos.call_entry_premium;
             let total_premium_dollars = total_premium * config.simulation.contract_multiplier;
             print!("Day {} ({}): Price ${:.2} | ", day, date_str, current_price);
             println!(
-                "OPENED position {} at {} | ${:.2} per barrel (${:.0} total)",
+                "OPENED position {} at {} | Strikes: Put ${:.2} Call ${:.2} | ${:.2} per barrel (${:.0} total)",
                 pos.position_id.0,
                 &config.strategy.entry_time,
+                pos.put_strike,
+                pos.call_strike,
                 total_premium,
                 total_premium_dollars
             );
@@ -289,6 +304,9 @@ fn main() {
 }
 
 /// Open a position with Black-76 pricing
+/// 
+/// If `strike_override` is Some((put, call)), use those strikes (for same_strikes roll type).
+/// Otherwise, calculate strikes based on config (ATM or OTM).
 fn open_position_with_pricing(
     calendar: &Calendar,
     event_store: &mut EventStore,
@@ -297,6 +315,7 @@ fn open_position_with_pricing(
     entry_day: Day,
     entry_time: TimeOfDay,
     current_price: f64,
+    strike_override: Option<(f64, f64)>,
 ) -> PositionTracking {
     let expiration_day = calendar.next_trading_day(entry_day);
     let time_to_expiry = calendar.calculate_dte(entry_day, expiration_day) as f64 / 252.0;
@@ -305,13 +324,26 @@ fn open_position_with_pricing(
     let put_leg_id = event_store.next_leg_id();
     let call_leg_id = event_store.next_leg_id();
 
-    // Determine strikes based on configuration
-    let (put_strike, call_strike) = match config.strategy.strike_selection.as_str() {
-        "OTM" => {
-            let offset = config.strategy.strike_offset;
-            (current_price - offset, current_price + offset)
+    // Determine strikes
+    let (put_strike, call_strike) = if let Some((put, call)) = strike_override {
+        // Use specified strikes (for same_strikes roll type)
+        (put, call)
+    } else {
+        // Calculate strikes based on configuration
+        match config.strategy.strike_selection.as_str() {
+            "OTM" => {
+                let offset = config.strategy.strike_offset;
+                let atm = config.strike_config.round_to_strike(current_price);
+                let put = config.strike_config.round_to_strike(atm - offset);
+                let call = config.strike_config.round_to_strike(atm + offset);
+                (put, call)
+            }
+            _ => {
+                // ATM - round to nearest valid strike
+                let atm = config.strike_config.round_to_strike(current_price);
+                (atm, atm)
+            }
         }
-        _ => (current_price, current_price), // ATM
     };
 
     // Price using Black-76
