@@ -1,10 +1,12 @@
-//! Trading Simulator V2 - Phase 2: GBM Price Generator
+//! Trading Simulator V2 - Phase 3: Black-76 Pricing & P&L Tracking
 //!
 //! Demonstrates:
 //! - Synthetic calendar
 //! - Event sourcing
 //! - GBM price generation
-//! - 1DTE straddle strategy with realistic prices
+//! - Black-76 option pricing
+//! - P&L tracking through position lifecycle
+//! - Greeks at entry
 //!
 //! Timing convention:
 //! - First position: opened at 15:00 day 0, rolled at 14:00 day 1 (23 hours)
@@ -14,30 +16,27 @@
 mod calendar;
 mod events;
 mod prices;
+mod pricing;
 
 use calendar::{Calendar, Day, TimeOfDay};
-use events::{Event, EventStore, OptionContract, OptionType, PositionId, Side, LegId};
+use events::{Event, EventStore, OptionContract, OptionType, PositionId, Side, LegId, CloseReason};
 use prices::GBM;
+use pricing::{Black76, Greeks};
 
 /// Time constants (in minutes from midnight)
 const ENTRY_TIME: TimeOfDay = 15 * 60;       // 15:00
 const ROLL_TIME: TimeOfDay = 14 * 60;        // 14:00
 const EXPIRY_TIME: TimeOfDay = 14 * 60 + 30; // 14:30
+const RISK_FREE_RATE: f64 = 0.05;            // 5% annual
 
 /// Simulation parameters
 #[derive(Debug)]
 struct SimulationConfig {
-    /// Starting day (0 = Monday, Jan 1, Year 0)
     start_day: Day,
-    /// Number of days to simulate
     num_days: usize,
-    /// Initial price (e.g., 75.0 for /CL at $75)
     initial_price: f64,
-    /// Annual drift (μ), e.g., 0.0 for no drift
     drift: f64,
-    /// Annual volatility (σ), e.g., 0.30 for 30%
     volatility: f64,
-    /// Random seed for reproducibility
     seed: u64,
 }
 
@@ -47,49 +46,42 @@ impl Default for SimulationConfig {
             start_day: 0,
             num_days: 30,
             initial_price: 75.0,
-            drift: 0.0,      // No drift
-            volatility: 0.30, // 30% annual vol
+            drift: 0.0,
+            volatility: 0.30,
             seed: 42,
         }
     }
 }
 
-/// Simple 1DTE straddle strategy configuration
+/// Position tracking with P&L
 #[derive(Debug)]
-struct StraddleConfig {
-    /// How many points OTM for each leg (0.0 = ATM)
-    strike_offset: f64,
-}
-
-impl Default for StraddleConfig {
-    fn default() -> Self {
-        Self {
-            strike_offset: 0.0, // ATM
-        }
-    }
-}
-
-/// Current state of a running straddle position
-#[derive(Debug)]
-struct StraddleState {
+struct PositionTracking {
     position_id: PositionId,
-    put_leg: LegId,
-    call_leg: LegId,
-    /// Day this position was opened
     entry_day: Day,
-    /// Day this position expires (14:30)
     expiration_day: Day,
-    /// Entry price of underlying
     entry_price: f64,
+    put_strike: f64,
+    call_strike: f64,
+    put_entry_premium: f64,
+    call_entry_premium: f64,
+    put_greeks: Greeks,
+    call_greeks: Greeks,
+}
+
+/// Track P&L summary
+#[derive(Debug, Default)]
+struct PnLSummary {
+    total_premium_collected: f64,
+    total_premium_paid: f64,
+    position_count: u32,
 }
 
 fn main() {
-    println!("Trading Simulator V2 - Phase 2: GBM Price Generator\n");
+    println!("Trading Simulator V2 - Phase 3: Black-76 Pricing & P&L\n");
 
     let calendar = Calendar::new();
     let mut event_store = EventStore::new();
     let sim_config = SimulationConfig::default();
-    let strat_config = StraddleConfig::default();
 
     // Generate price path using GBM
     let mut gbm = GBM::new(
@@ -105,13 +97,15 @@ fn main() {
     println!("  Initial price: ${:.2}", sim_config.initial_price);
     println!("  Drift (μ): {:.2}%", sim_config.drift * 100.0);
     println!("  Volatility (σ): {:.0}%", sim_config.volatility * 100.0);
+    println!("  Risk-free rate: {:.1}%", RISK_FREE_RATE * 100.0);
     println!("  Seed: {}", sim_config.seed);
     println!("  Entry time: 15:00");
     println!("  Roll time: 14:00 (next day)");
     println!();
 
     // Track active position
-    let mut active_position: Option<StraddleState> = None;
+    let mut active_position: Option<PositionTracking> = None;
+    let mut pnl_summary = PnLSummary::default();
 
     // Run simulation day by day
     let mut price_iter = price_path.iter();
@@ -121,157 +115,144 @@ fn main() {
             continue;
         }
 
-        // Get price for this day
         let current_price = price_iter
             .next()
             .map(|(_, price)| *price)
-            .unwrap_or_else(|| {
-                // Fallback: use last known price
-                price_path.last().map(|(_, p)| *p).unwrap_or(sim_config.initial_price)
-            });
+            .unwrap_or_else(|| price_path.last().map(|(_, p)| *p).unwrap_or(sim_config.initial_price));
 
         let date_str = format_day(day);
 
         // Check for roll trigger at 14:00
         if let Some(pos) = active_position.take() {
-            // We have an active position - check if today is the roll day
             if day == pos.expiration_day {
-                // Roll at 14:00: close old position, open new one
+                // Calculate actual close value (intrinsic at expiry)
+                let put_close = calculate_close_value(current_price, pos.put_strike, false);
+                let call_close = calculate_close_value(current_price, pos.call_strike, true);
+                
+                let position_pnl = (pos.put_entry_premium + pos.call_entry_premium) - (put_close + call_close);
+                pnl_summary.total_premium_paid += put_close + call_close;
+                
                 print!("Day {} ({}): Price ${:.2} | ", day, date_str, current_price);
+                println!("CLOSED position {} at 14:00 | P&L: ${:.2}", 
+                         pos.position_id.0, position_pnl);
 
-                // Close current position at 14:00
                 let close_event = Event::PositionClosed {
                     position_id: pos.position_id,
                     timestamp: (day, ROLL_TIME),
                     close_premiums: vec![
-                        (pos.put_leg, 0.10), // Simulated decayed value
-                        (pos.call_leg, 0.10),
+                        (LegId(pos.position_id.0 * 2 - 1), put_close),
+                        (LegId(pos.position_id.0 * 2), call_close),
                     ],
-                    reason: events::CloseReason::Expiration,
+                    reason: CloseReason::Expiration,
                 };
                 event_store.append(close_event);
-                println!("CLOSED position {} at 14:00", pos.position_id.0);
 
-                // Open new position at 14:00 (expires next trading day)
-                let new_position = open_position(
+                // Open new position
+                let new_pos = open_position_with_pricing(
                     &calendar,
                     &mut event_store,
-                    &strat_config,
+                    &mut pnl_summary,
                     day,
-                    ROLL_TIME, // Open at roll time (14:00)
+                    ROLL_TIME,
                     current_price,
+                    sim_config.volatility,
                 );
-                println!(
-                    "  -> OPENED position {} at 14:00 -> Exp {}",
-                    new_position.position_id.0,
-                    new_position.expiration_day
-                );
+                println!("  -> OPENED position {} at 14:00 | Put: ${:.2} Call: ${:.2} | Total: ${:.2}",
+                         new_pos.position_id.0, 
+                         new_pos.put_entry_premium, 
+                         new_pos.call_entry_premium,
+                         new_pos.put_entry_premium + new_pos.call_entry_premium);
+                print_greeks(&new_pos);
 
-                active_position = Some(new_position);
-                continue; // Skip the entry check below
+                active_position = Some(new_pos);
+                continue;
             }
         }
 
-        // Check if we need to open a new position at 15:00
+        // Open new position at 15:00
         if active_position.is_none() {
-            print!("Day {} ({}): Price ${:.2} | ", day, date_str, current_price);
-
-            let position = open_position(
+            let pos = open_position_with_pricing(
                 &calendar,
                 &mut event_store,
-                &strat_config,
+                &mut pnl_summary,
                 day,
-                ENTRY_TIME, // Open at 15:00
+                ENTRY_TIME,
                 current_price,
+                sim_config.volatility,
             );
-            println!(
-                "OPENED position {} at 15:00 -> Exp {}",
-                position.position_id.0,
-                position.expiration_day
-            );
+            
+            print!("Day {} ({}): Price ${:.2} | ", day, date_str, current_price);
+            println!("OPENED position {} at 15:00 | Put: ${:.2} Call: ${:.2} | Total: ${:.2}",
+                     pos.position_id.0,
+                     pos.put_entry_premium,
+                     pos.call_entry_premium,
+                     pos.put_entry_premium + pos.call_entry_premium);
+            print_greeks(&pos);
 
-            active_position = Some(position);
+            active_position = Some(pos);
         } else {
-            // Just holding
             let pos = active_position.as_ref().unwrap();
             let remaining_dte = calendar.calculate_dte(day, pos.expiration_day);
-            println!(
-                "Day {} ({}): Price ${:.2} | Holding position {} (DTE: {})",
-                day, date_str, current_price, pos.position_id.0, remaining_dte
-            );
+            
+            // Calculate current position value (for tracking)
+            let time_to_expiry = remaining_dte as f64 / 252.0;
+            let current_put = Black76::price(current_price, pos.put_strike, time_to_expiry, 
+                                             RISK_FREE_RATE, sim_config.volatility, false);
+            let current_call = Black76::price(current_price, pos.call_strike, time_to_expiry,
+                                              RISK_FREE_RATE, sim_config.volatility, true);
+            let current_value = current_put + current_call;
+            let entry_value = pos.put_entry_premium + pos.call_entry_premium;
+            let unrealized_pnl = entry_value - current_value;
+            
+            println!("Day {} ({}): Price ${:.2} | Holding pos {} | DTE: {} | Unrealized P&L: ${:.2}",
+                     day, date_str, current_price, pos.position_id.0, remaining_dte, unrealized_pnl);
         }
     }
 
-    // Summary
-    println!("\n=== Simulation Summary ===");
-    println!("Total events recorded: {}", event_store.all_events().len());
-    println!(
-        "Final price: ${:.2}",
-        price_path.last().map(|(_, p)| *p).unwrap_or(sim_config.initial_price)
-    );
-
-    // Replay events
-    println!("\n=== Event Log ===");
-    for event in event_store.all_events() {
-        match event {
-            Event::PositionOpened {
-                position_id,
-                timestamp,
-                legs,
-            } => {
-                println!(
-                    "\nPosition {} opened on day {} at {}:{:02}",
-                    position_id.0,
-                    timestamp.0,
-                    timestamp.1 / 60,
-                    timestamp.1 % 60
-                );
-                for (leg_id, contract, premium) in legs {
-                    println!(
-                        "  Leg {}: {:?} {:?} strike=${:.2} premium=${:.2}",
-                        leg_id.0, contract.side, contract.option_type, contract.strike, premium
-                    );
-                }
-            }
-            Event::PositionClosed {
-                position_id,
-                timestamp,
-                reason,
-                ..
-            } => {
-                println!(
-                    "Position {} closed on day {} at {}:{:02} (reason: {:?})",
-                    position_id.0,
-                    timestamp.0,
-                    timestamp.1 / 60,
-                    timestamp.1 % 60,
-                    reason
-                );
-            }
-            _ => {}
-        }
-    }
+    // Final summary
+    println!("\n{}", "=".repeat(60));
+    println!("SIMULATION SUMMARY");
+    println!("{}", "=".repeat(60));
+    println!("Total positions opened: {}", pnl_summary.position_count);
+    println!("Total premium collected: ${:.2}", pnl_summary.total_premium_collected);
+    println!("Total premium paid: ${:.2}", pnl_summary.total_premium_paid);
+    println!("Net P&L: ${:.2}", pnl_summary.total_premium_collected - pnl_summary.total_premium_paid);
+    println!("Final underlying price: ${:.2}", 
+             price_path.last().map(|(_, p)| *p).unwrap_or(sim_config.initial_price));
 }
 
-/// Open a new 1DTE straddle position
-fn open_position(
+/// Open a position with Black-76 pricing
+fn open_position_with_pricing(
     calendar: &Calendar,
     event_store: &mut EventStore,
-    config: &StraddleConfig,
+    pnl: &mut PnLSummary,
     entry_day: Day,
     entry_time: TimeOfDay,
     current_price: f64,
-) -> StraddleState {
-    // Expires on the next trading day at 14:30
+    volatility: f64,
+) -> PositionTracking {
     let expiration_day = calendar.next_trading_day(entry_day);
-
+    let time_to_expiry = calendar.calculate_dte(entry_day, expiration_day) as f64 / 252.0;
+    
     let position_id = event_store.next_position_id();
     let put_leg_id = event_store.next_leg_id();
     let call_leg_id = event_store.next_leg_id();
-
-    let put_strike = current_price - config.strike_offset;
-    let call_strike = current_price + config.strike_offset;
-
+    
+    let put_strike = current_price;  // ATM
+    let call_strike = current_price; // ATM
+    
+    // Price using Black-76
+    let put_premium = Black76::price(current_price, put_strike, time_to_expiry, 
+                                     RISK_FREE_RATE, volatility, false);
+    let call_premium = Black76::price(current_price, call_strike, time_to_expiry,
+                                      RISK_FREE_RATE, volatility, true);
+    
+    // Calculate Greeks
+    let put_greeks = Black76::greeks(current_price, put_strike, time_to_expiry,
+                                     RISK_FREE_RATE, volatility, false);
+    let call_greeks = Black76::greeks(current_price, call_strike, time_to_expiry,
+                                      RISK_FREE_RATE, volatility, true);
+    
     let put_contract = OptionContract {
         underlying_price: current_price,
         strike: put_strike,
@@ -279,7 +260,7 @@ fn open_position(
         side: Side::Short,
         expiration_day,
     };
-
+    
     let call_contract = OptionContract {
         underlying_price: current_price,
         strike: call_strike,
@@ -287,11 +268,7 @@ fn open_position(
         side: Side::Short,
         expiration_day,
     };
-
-    // Simulate premiums (in real code, from Black-Scholes)
-    let put_premium = 0.50;
-    let call_premium = 0.50;
-
+    
     let event = Event::PositionOpened {
         position_id,
         timestamp: (entry_day, entry_time),
@@ -300,17 +277,43 @@ fn open_position(
             (call_leg_id, call_contract, call_premium),
         ],
     };
-
     event_store.append(event);
-
-    StraddleState {
+    
+    pnl.position_count += 1;
+    pnl.total_premium_collected += put_premium + call_premium;
+    
+    PositionTracking {
         position_id,
-        put_leg: put_leg_id,
-        call_leg: call_leg_id,
         entry_day,
         expiration_day,
         entry_price: current_price,
+        put_strike,
+        call_strike,
+        put_entry_premium: put_premium,
+        call_entry_premium: call_premium,
+        put_greeks,
+        call_greeks,
     }
+}
+
+/// Calculate close value (intrinsic at expiry)
+fn calculate_close_value(underlying: f64, strike: f64, is_call: bool) -> f64 {
+    if is_call {
+        (underlying - strike).max(0.0)
+    } else {
+        (strike - underlying).max(0.0)
+    }
+}
+
+/// Print Greeks for a position
+fn print_greeks(pos: &PositionTracking) {
+    let total_delta = pos.put_greeks.delta + pos.call_greeks.delta;
+    let total_gamma = pos.put_greeks.gamma + pos.call_greeks.gamma;
+    let total_theta = pos.put_greeks.theta + pos.call_greeks.theta;
+    let total_vega = pos.put_greeks.vega + pos.call_greeks.vega;
+    
+    println!("      Greeks: δ={:.3} γ={:.4} θ={:.3}/day ν={:.3}",
+             total_delta, total_gamma, total_theta, total_vega);
 }
 
 /// Format a day number as a human-readable date string
