@@ -67,10 +67,9 @@ strike_config:
         actix_web::error::ErrorInternalServerError(format!("Failed to write config: {}", e))
     })?;
 
-    // Run simulation using cargo
-    let output = Command::new("cargo")
-        .args(["run", "--", config_path])
-        .current_dir("/home/gutastef/trading-simulator-v2")
+    // Run simulation using pre-built binary
+    let output = Command::new("/home/gutastef/trading-simulator-v2/target/debug/trading-simulator-v2")
+        .arg(config_path)
         .output()
         .map_err(|e| {
             actix_web::error::ErrorInternalServerError(format!("Failed to run simulation: {}", e))
