@@ -6,8 +6,8 @@
 //! - Basic 1DTE straddle strategy
 //!
 //! Timing convention:
-//! - Positions opened at 15:00
-//! - Rolled at 14:00 next day (23 hours later)
+//! - First position: opened at 15:00 day 0, rolled at 14:00 day 1 (23 hours)
+//! - Subsequent: opened at 14:00, rolled at 14:00 next day (24 hours)
 //! - Each position expires at 14:30 on its expiration day
 
 mod calendar;
