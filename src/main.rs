@@ -371,8 +371,14 @@ fn open_position_with_pricing(
     strike_override: Option<(f64, f64)>,
     implied_vol: f64,
 ) -> PositionTracking {
-    let expiration_day = calendar.next_trading_day(entry_day);
-    let time_to_expiry = calendar.calculate_dte(entry_day, expiration_day) as f64 / 252.0;
+    // Calculate expiration day based on entry_dte config
+    let mut expiration_day = entry_day;
+    let mut trading_days_count = 0;
+    while trading_days_count < config.strategy.entry_dte {
+        expiration_day = calendar.next_trading_day(expiration_day);
+        trading_days_count += 1;
+    }
+    let time_to_expiry = config.strategy.entry_dte as f64 / 252.0;
 
     let position_id = event_store.next_position_id();
     let put_leg_id = event_store.next_leg_id();

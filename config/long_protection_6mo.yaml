@@ -1,0 +1,42 @@
+# Trading Simulator V2 - Long Protection (70 DTE)
+# 6 month simulation with DTE-based rolling at 28 DTE
+
+simulation:
+  days: 126                    # ~6 months of trading days
+  initial_price: 75.0
+  drift: 0.0
+  volatility: 0.30
+  volatility_risk_premium: 0.05
+  seed: 42
+  risk_free_rate: 0.05
+  contract_multiplier: 1000
+
+strategy:
+  strategy_type: straddle       # Using straddle for now (will adapt for long puts)
+  entry_dte: 70                 # 70 DTE for long protection
+  entry_time: "15:00"
+  roll_time: "14:00"
+  strike_selection: OTM
+  strike_offset: 3.0            # 3 points OTM for puts
+  
+  roll_triggers:
+    - trigger_type: dte
+      value: 28.0               # Roll when DTE <= 28
+      legs: both
+    # Optional: PT14% for recentering
+    # - trigger_type: profit_target
+    #   value: 0.14
+    #   legs: both
+
+strike_config:
+  tick_size: 0.25
+  roll_type: recenter
+
+product:
+  symbol: "/CL"
+  tick_size: 0.01
+  point_value: 1000.0
+  trading_hours:
+    open: "09:00"
+    close: "17:00"
+    option_expiry: "14:30"
