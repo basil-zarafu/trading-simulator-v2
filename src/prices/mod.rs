@@ -48,7 +48,8 @@ impl GBM {
             
             // GBM formula: dS = μS dt + σS dW
             // Discretized: S(t+dt) = S(t) * exp((μ - 0.5σ²)dt + σ√dt * Z)
-            let z: f64 = self.rng.sample(rand::distributions::Standard);
+            // Z ~ N(0,1) standard normal (can be negative!)
+            let z: f64 = self.rng.sample(rand_distr::StandardNormal);
             let brownian_motion = z * dt.sqrt();
             
             let drift_term = (self.drift - 0.5 * self.volatility.powi(2)) * dt;
@@ -65,7 +66,7 @@ impl GBM {
     /// Useful for step-by-step simulation
     pub fn next_price(&mut self, current_price: f64) -> f64 {
         let dt: f64 = 1.0 / 252.0;
-        let z: f64 = self.rng.sample(rand::distributions::Standard);
+        let z: f64 = self.rng.sample(rand_distr::StandardNormal);
         let brownian_motion = z * dt.sqrt();
         
         let drift_term = (self.drift - 0.5 * self.volatility.powi(2)) * dt;
