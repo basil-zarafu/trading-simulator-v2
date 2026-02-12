@@ -149,71 +149,110 @@ fn main() {
 
         let date_str = format_day(day);
 
-        // Check for roll trigger
+        // Check for roll triggers
         if let Some(pos) = active_position.take() {
-            if day == pos.expiration_day {
-                // Calculate close value (intrinsic at expiry)
-                let put_close = calculate_close_value(current_price, pos.put_strike, false);
-                let call_close = calculate_close_value(current_price, pos.call_strike, true);
-
-                let position_pnl =
-                    (pos.put_entry_premium + pos.call_entry_premium) - (put_close + call_close);
-                let position_pnl_dollars = position_pnl * config.simulation.contract_multiplier;
-                pnl_summary.total_premium_paid += put_close + call_close;
-
-                print!("Day {} ({}): Price ${:.2} | ", day, date_str, current_price);
-                println!(
-                    "CLOSED position {} at {} | P&L: ${:.0}",
-                    pos.position_id.0,
-                    &config.strategy.roll_time,
-                    position_pnl_dollars
-                );
-
-                let close_event = Event::PositionClosed {
-                    position_id: pos.position_id,
-                    timestamp: (day, roll_time),
-                    close_premiums: vec![
-                        (LegId(pos.position_id.0 * 2 - 1), put_close),
-                        (LegId(pos.position_id.0 * 2), call_close),
-                    ],
-                    reason: CloseReason::Expiration,
-                };
-                event_store.append(close_event);
-
-                // Open new position - check roll type
-                let use_same_strikes = config.strike_config.roll_type == "same_strikes";
-                let new_pos = open_position_with_pricing(
-                    &calendar,
-                    &mut event_store,
-                    &mut pnl_summary,
-                    &config,
-                    day,
-                    roll_time,
-                    current_price,
-                    if use_same_strikes {
-                        Some((pos.put_strike, pos.call_strike))
-                    } else {
-                        None
-                    },
-                    implied_vol,
-                );
-                let new_total = new_pos.put_entry_premium + new_pos.call_entry_premium;
-                let new_total_dollars = new_total * config.simulation.contract_multiplier;
-                let roll_type_str = if use_same_strikes { " (same strikes)" } else { "" };
-                println!(
-                    "  -> OPENED position {} at {} | Strikes: Put ${:.2} Call ${:.2} | ${:.2} per barrel (${:.0} total){}",
-                    new_pos.position_id.0,
-                    &config.strategy.roll_time,
-                    new_pos.put_strike,
-                    new_pos.call_strike,
-                    new_total,
-                    new_total_dollars,
-                    roll_type_str
-                );
-                print_greeks(&new_pos);
-
-                active_position = Some(new_pos);
-                continue;
+            // Evaluate triggers using the trigger engine
+            let position_state = triggers::PositionState {
+                position_id: pos.position_id.0,
+                entry_day: pos.entry_day,
+                expiration_day: pos.expiration_day,
+                entry_price: pos.entry_price,
+                current_price,
+                put_strike: pos.put_strike,
+                call_strike: pos.call_strike,
+                put_entry_premium: pos.put_entry_premium,
+                call_entry_premium: pos.call_entry_premium,
+                last_rolled_put: None,
+                last_rolled_call: None,
+            };
+            
+            let decision = triggers::evaluate_triggers(
+                &position_state,
+                &config,
+                &calendar,
+                day,
+                roll_time,
+                implied_vol,
+                config.simulation.risk_free_rate,
+            );
+            
+            match decision {
+                triggers::RollDecision::RollBoth { reason } => {
+                    // Close current position
+                    let put_close = calculate_close_value(current_price, pos.put_strike, false);
+                    let call_close = calculate_close_value(current_price, pos.call_strike, true);
+                    
+                    let position_pnl =
+                        (pos.put_entry_premium + pos.call_entry_premium) - (put_close + call_close);
+                    let position_pnl_dollars = position_pnl * config.simulation.contract_multiplier;
+                    pnl_summary.total_premium_paid += put_close + call_close;
+                    
+                    let reason_str = format!("{:?}", reason);
+                    print!("Day {} ({}): Price ${:.2} | ", day, date_str, current_price);
+                    println!(
+                        "CLOSED position {} at {} | P&L: ${:.0} ({})",
+                        pos.position_id.0,
+                        &config.strategy.roll_time,
+                        position_pnl_dollars,
+                        reason_str.split(' ').next().unwrap_or("Roll")
+                    );
+                    
+                    let close_event = Event::PositionClosed {
+                        position_id: pos.position_id,
+                        timestamp: (day, roll_time),
+                        close_premiums: vec![
+                            (LegId(pos.position_id.0 * 2 - 1), put_close),
+                            (LegId(pos.position_id.0 * 2), call_close),
+                        ],
+                        reason: CloseReason::Expiration,
+                    };
+                    event_store.append(close_event);
+                    
+                    // Open new position
+                    let use_same_strikes = config.strike_config.roll_type == "same_strikes";
+                    let new_pos = open_position_with_pricing(
+                        &calendar,
+                        &mut event_store,
+                        &mut pnl_summary,
+                        &config,
+                        day,
+                        roll_time,
+                        current_price,
+                        if use_same_strikes {
+                            Some((pos.put_strike, pos.call_strike))
+                        } else {
+                            None
+                        },
+                        implied_vol,
+                    );
+                    let new_total = new_pos.put_entry_premium + new_pos.call_entry_premium;
+                    let new_total_dollars = new_total * config.simulation.contract_multiplier;
+                    let roll_type_str = if use_same_strikes { " (same strikes)" } else { "" };
+                    println!(
+                        "  -> OPENED position {} at {} | Strikes: Put ${:.2} Call ${:.2} | ${:.2} per barrel (${:.0} total){}",
+                        new_pos.position_id.0,
+                        &config.strategy.roll_time,
+                        new_pos.put_strike,
+                        new_pos.call_strike,
+                        new_total,
+                        new_total_dollars,
+                        roll_type_str
+                    );
+                    print_greeks(&new_pos);
+                    
+                    active_position = Some(new_pos);
+                    continue;
+                }
+                triggers::RollDecision::RollPut { .. } |
+                triggers::RollDecision::RollCall { .. } => {
+                    // Per-leg rolling - simplified for now (roll both)
+                    // TODO: Implement true per-leg rolling
+                    active_position = Some(pos);
+                }
+                triggers::RollDecision::Hold => {
+                    // No roll triggered, keep position
+                    active_position = Some(pos);
+                }
             }
         }
 

@@ -1,0 +1,40 @@
+# Trading Simulator V2 - 1DTE Straddle with 50% Profit Target
+
+simulation:
+  days: 30
+  initial_price: 75.0
+  drift: 0.0
+  volatility: 0.30
+  volatility_risk_premium: 0.05  # 5% VRP = 35% implied vol
+  seed: 42
+  risk_free_rate: 0.05
+  contract_multiplier: 1000
+
+strategy:
+  strategy_type: straddle
+  entry_dte: 1
+  entry_time: "15:00"
+  roll_time: "14:00"
+  strike_selection: ATM
+  strike_offset: 0.0
+  
+  roll_triggers:
+    - trigger_type: profit_target
+      value: 0.50              # 50% profit target
+      legs: both
+    - trigger_type: time
+      value: 14.0              # Fallback: roll at 14:00 if profit target not hit
+      legs: both
+
+strike_config:
+  tick_size: 0.25
+  roll_type: recenter
+
+product:
+  symbol: "/CL"
+  tick_size: 0.01
+  point_value: 1000.0
+  trading_hours:
+    open: "09:00"
+    close: "17:00"
+    option_expiry: "14:30"
