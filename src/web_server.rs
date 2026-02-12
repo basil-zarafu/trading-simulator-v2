@@ -132,11 +132,13 @@ fn extract_summary(output: &str) -> (f64, u32, f64) {
     
     for line in output.lines() {
         if line.contains("Net P&L:") {
-            // Extract P&L value
-            if let Some(val) = line.split('$').nth(1) {
-                net_pnl = val.split_whitespace().next()
-                    .and_then(|s| s.replace(",", "").parse().ok())
-                    .unwrap_or(0.0);
+            // Extract total P&L value (in parentheses)
+            // Format: "Net P&L: $13.44 per barrel ($13441 total)"
+            if let Some(start) = line.find("($") {
+                if let Some(end) = line[start..].find(" total") {
+                    let val = &line[start+2..start+end];
+                    net_pnl = val.replace(",", "").parse().unwrap_or(0.0);
+                }
             }
         }
         if line.contains("Total positions opened:") {
