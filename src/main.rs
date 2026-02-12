@@ -96,12 +96,18 @@ fn main() {
     );
     let price_path = gbm.generate_path(config.simulation.days);
 
+    // Calculate implied volatility for option pricing
+    let realized_vol = config.simulation.volatility;
+    let implied_vol = realized_vol + config.simulation.volatility_risk_premium;
+    
     // Print configuration
     println!("Simulation Parameters:");
     println!("  Days: {}", config.simulation.days);
     println!("  Initial price: ${:.2}", config.simulation.initial_price);
     println!("  Drift (μ): {:.2}%", config.simulation.drift * 100.0);
-    println!("  Volatility (σ): {:.0}%", config.simulation.volatility * 100.0);
+    println!("  Realized volatility: {:.0}%", realized_vol * 100.0);
+    println!("  Volatility Risk Premium: {:.1}%", config.simulation.volatility_risk_premium * 100.0);
+    println!("  Implied volatility: {:.0}% (for option pricing)", implied_vol * 100.0);
     println!("  Risk-free rate: {:.1}%", config.simulation.risk_free_rate * 100.0);
     println!("  Seed: {}", config.simulation.seed);
     println!();
@@ -186,6 +192,7 @@ fn main() {
                     } else {
                         None
                     },
+                    implied_vol,
                 );
                 let new_total = new_pos.put_entry_premium + new_pos.call_entry_premium;
                 let new_total_dollars = new_total * config.simulation.contract_multiplier;
@@ -218,6 +225,7 @@ fn main() {
                 entry_time,
                 current_price,
                 None, // No strike override for new positions
+                implied_vol,
             );
 
             let total_premium = pos.put_entry_premium + pos.call_entry_premium;
@@ -241,12 +249,13 @@ fn main() {
             let remaining_dte = calendar.calculate_dte(day, pos.expiration_day);
 
             let time_to_expiry = remaining_dte as f64 / 252.0;
+            // Use implied volatility for current market value
             let current_put = Black76::price(
                 current_price,
                 pos.put_strike,
                 time_to_expiry,
                 config.simulation.risk_free_rate,
-                config.simulation.volatility,
+                implied_vol,
                 false,
             );
             let current_call = Black76::price(
@@ -254,7 +263,7 @@ fn main() {
                 pos.call_strike,
                 time_to_expiry,
                 config.simulation.risk_free_rate,
-                config.simulation.volatility,
+                implied_vol,
                 true,
             );
             let current_value = current_put + current_call;
@@ -307,6 +316,8 @@ fn main() {
 /// 
 /// If `strike_override` is Some((put, call)), use those strikes (for same_strikes roll type).
 /// Otherwise, calculate strikes based on config (ATM or OTM).
+/// 
+/// Uses implied volatility for option pricing (realized vol + VRP).
 fn open_position_with_pricing(
     calendar: &Calendar,
     event_store: &mut EventStore,
@@ -316,6 +327,7 @@ fn open_position_with_pricing(
     entry_time: TimeOfDay,
     current_price: f64,
     strike_override: Option<(f64, f64)>,
+    implied_vol: f64,
 ) -> PositionTracking {
     let expiration_day = calendar.next_trading_day(entry_day);
     let time_to_expiry = calendar.calculate_dte(entry_day, expiration_day) as f64 / 252.0;
@@ -346,11 +358,12 @@ fn open_position_with_pricing(
                     let option_type = parts[1]; // "put" or "call"
                     let target_delta: f64 = parts[2].parse().unwrap_or(30.0) / 100.0;
                     
+                    // Use implied vol for delta-based strike selection
                     let strike = find_strike_by_delta(
                         current_price,
                         time_to_expiry,
                         config.simulation.risk_free_rate,
-                        config.simulation.volatility,
+                        implied_vol,
                         option_type == "call",
                         target_delta,
                         &config.strike_config,
@@ -375,13 +388,13 @@ fn open_position_with_pricing(
         }
     };
 
-    // Price using Black-76
+    // Price using Black-76 with IMPLIED volatility (includes VRP)
     let put_premium = Black76::price(
         current_price,
         put_strike,
         time_to_expiry,
         config.simulation.risk_free_rate,
-        config.simulation.volatility,
+        implied_vol,
         false,
     );
     let call_premium = Black76::price(
@@ -389,17 +402,17 @@ fn open_position_with_pricing(
         call_strike,
         time_to_expiry,
         config.simulation.risk_free_rate,
-        config.simulation.volatility,
+        implied_vol,
         true,
     );
 
-    // Calculate Greeks
+    // Calculate Greeks using implied volatility
     let put_greeks = Black76::greeks(
         current_price,
         put_strike,
         time_to_expiry,
         config.simulation.risk_free_rate,
-        config.simulation.volatility,
+        implied_vol,
         false,
     );
     let call_greeks = Black76::greeks(
@@ -407,7 +420,7 @@ fn open_position_with_pricing(
         call_strike,
         time_to_expiry,
         config.simulation.risk_free_rate,
-        config.simulation.volatility,
+        implied_vol,
         true,
     );
 

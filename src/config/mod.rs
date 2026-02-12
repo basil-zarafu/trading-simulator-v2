@@ -31,8 +31,13 @@ pub struct SimulationConfig {
     /// Annual drift (μ), e.g., 0.0 for no drift
     #[serde(default)]
     pub drift: f64,
-    /// Annual volatility (σ), e.g., 0.30 for 30%
+    /// Annual realized volatility (σ) - actual price movement in simulation
     pub volatility: f64,
+    /// Volatility Risk Premium (VRP) - added to realized vol for option pricing
+    /// Implied Vol = Realized Vol + VRP
+    /// Example: 0.30 realized + 0.05 VRP = 0.35 implied (35% IV)
+    #[serde(default)]
+    pub volatility_risk_premium: f64,
     /// Random seed for reproducibility
     pub seed: u64,
     /// Risk-free rate (e.g., 0.05 for 5%)
@@ -161,6 +166,7 @@ impl Config {
                 initial_price: 75.0,
                 drift: 0.0,
                 volatility: 0.30,
+                volatility_risk_premium: 0.05, // 5% VRP = 30% realized → 35% implied
                 seed: 42,
                 risk_free_rate: 0.05,
                 contract_multiplier: 1000.0,

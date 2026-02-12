@@ -5,7 +5,8 @@ simulation:
   days: 30                    # Number of trading days to simulate
   initial_price: 75.0         # Starting price for /CL
   drift: 0.0                  # Annual drift (0 = no directional bias)
-  volatility: 0.30            # Annual volatility (30%)
+  volatility: 0.30            # Realized volatility (actual price movement)
+  volatility_risk_premium: 0.05  # VRP: Implied vol = realized + VRP (e.g., 30% + 5% = 35% IV)
   seed: 42                    # Random seed for reproducible results
   risk_free_rate: 0.05        # Risk-free rate (5%)
   contract_multiplier: 1000   # /CL contracts = 1000 barrels
