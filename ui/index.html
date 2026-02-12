@@ -426,28 +426,21 @@
             });
         }
         
-        // Placeholder for Tauri invoke
+        // Call local web API
         async function invoke(cmd, args) {
-            // This will be replaced by actual Tauri invoke
-            console.log('Invoke:', cmd, args);
-            
-            // Return mock data for now
-            return new Promise(resolve => {
-                setTimeout(() => {
-                    resolve({
-                        netPnl: 15432,
-                        positionCount: 42,
-                        winRate: 68,
-                        finalPrice: 89.45,
-                        trades: [
-                            { type: 'open', message: 'Day 0: OPENED position 1 at 15:00 | Strikes: Put $75.00 Call $75.00 | $1.32 per barrel' },
-                            { type: 'close', message: 'Day 1: CLOSED position 1 at 14:00 | P&L: $583 (TimeTrigger)' },
-                            { type: 'open', message: 'Day 1: OPENED position 2 at 14:00 | Strikes: Put $75.75 Call $75.75 | $1.33 per barrel' },
-                            { type: 'close', message: 'Day 2: CLOSED position 2 at 14:00 | P&L: $579 (TimeTrigger)' },
-                        ]
-                    });
-                }, 1000);
-            });
+            if (cmd === 'run_simulation') {
+                const response = await fetch('/run', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(args.config)
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
+                return await response.json();
+            }
         }
     </script>
 </body>
