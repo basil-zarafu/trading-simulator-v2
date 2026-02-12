@@ -18,6 +18,7 @@ strategy:
   roll_time: "14:00"
   strike_selection: OTM
   strike_offset: 3.0            # 3 points OTM for puts
+  side: "long"                  # We PAY premium for protection
   
   roll_triggers:
     - trigger_type: dte

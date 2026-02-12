@@ -51,7 +51,7 @@ pub struct SimulationConfig {
 /// Strategy configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StrategyConfig {
-    /// Strategy type: "straddle", "strangle", etc.
+    /// Strategy type: "straddle", "strangle", "long_put", etc.
     pub strategy_type: String,
     /// DTE (days to expiration) at entry
     pub entry_dte: u32,
@@ -67,6 +67,9 @@ pub struct StrategyConfig {
     /// Strike offset in price points (for OTM strategies)
     #[serde(default)]
     pub strike_offset: f64,
+    /// Position side: "short" (collect premium) or "long" (pay premium)
+    #[serde(default = "default_side")]
+    pub side: String,
     /// Roll triggers
     #[serde(default)]
     pub roll_triggers: Vec<RollTriggerConfig>,
@@ -178,6 +181,7 @@ impl Config {
                 roll_time: "14:00".to_string(),
                 strike_selection: "ATM".to_string(),
                 strike_offset: 0.0,
+                side: "short".to_string(),
                 roll_triggers: vec![
                     RollTriggerConfig {
                         trigger_type: "time".to_string(),
@@ -301,6 +305,10 @@ fn default_strike_selection() -> String {
 
 fn default_legs() -> String {
     "both".to_string()
+}
+
+fn default_side() -> String {
+    "short".to_string()
 }
 
 fn default_strike_config() -> StrikeConfig {

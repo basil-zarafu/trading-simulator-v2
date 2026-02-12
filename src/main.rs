@@ -115,6 +115,10 @@ fn main() {
     println!("  Seed: {}", config.simulation.seed);
     println!();
     println!("Strategy: {} ({} DTE)", config.strategy.strategy_type, config.strategy.entry_dte);
+    println!("  Side: {} ({})", 
+        config.strategy.side,
+        if config.strategy.side == "long" { "pay premium" } else { "collect premium" }
+    );
     println!("  Entry time: {}", config.strategy.entry_time);
     println!("  Roll time: {}", config.strategy.roll_time);
     println!("  Strike selection: {}", config.strategy.strike_selection);
@@ -182,8 +186,15 @@ fn main() {
                     let put_close = calculate_close_value(current_price, pos.put_strike, false);
                     let call_close = calculate_close_value(current_price, pos.call_strike, true);
                     
-                    let position_pnl =
-                        (pos.put_entry_premium + pos.call_entry_premium) - (put_close + call_close);
+                    // Calculate P&L based on position side
+                    let is_long = config.strategy.side == "long";
+                    let position_pnl = if is_long {
+                        // Long: Close Value - Entry Premium (we paid, now we get back)
+                        (put_close + call_close) - (pos.put_entry_premium + pos.call_entry_premium)
+                    } else {
+                        // Short: Entry Premium - Close Value (we collected, now we pay)
+                        (pos.put_entry_premium + pos.call_entry_premium) - (put_close + call_close)
+                    };
                     let position_pnl_dollars = position_pnl * config.simulation.contract_multiplier;
                     pnl_summary.total_premium_paid += put_close + call_close;
                     
@@ -310,7 +321,13 @@ fn main() {
             );
             let current_value = current_put + current_call;
             let entry_value = pos.put_entry_premium + pos.call_entry_premium;
-            let unrealized_pnl = entry_value - current_value;
+            // Calculate unrealized P&L based on side
+            let is_long = config.strategy.side == "long";
+            let unrealized_pnl = if is_long {
+                current_value - entry_value  // Long: current value minus what we paid
+            } else {
+                entry_value - current_value  // Short: what we collected minus current liability
+            };
             let unrealized_pnl_dollars = unrealized_pnl * config.simulation.contract_multiplier;
 
             println!(
@@ -472,11 +489,14 @@ fn open_position_with_pricing(
         true,
     );
 
+    // Determine side from config (short = collect premium, long = pay premium)
+    let side = if config.strategy.side == "long" { Side::Long } else { Side::Short };
+    
     let put_contract = OptionContract {
         underlying_price: current_price,
         strike: put_strike,
         option_type: OptionType::Put,
-        side: Side::Short,
+        side,
         expiration_day,
     };
 
@@ -484,22 +504,32 @@ fn open_position_with_pricing(
         underlying_price: current_price,
         strike: call_strike,
         option_type: OptionType::Call,
-        side: Side::Short,
+        side,
         expiration_day,
     };
 
+    // For long positions, premium is negative (we pay)
+    // For short positions, premium is positive (we collect)
+    let put_premium_signed = if side == Side::Long { -put_premium } else { put_premium };
+    let call_premium_signed = if side == Side::Long { -call_premium } else { call_premium };
+    
     let event = Event::PositionOpened {
         position_id,
         timestamp: (entry_day, entry_time),
         legs: vec![
-            (put_leg_id, put_contract, put_premium),
-            (call_leg_id, call_contract, call_premium),
+            (put_leg_id, put_contract, put_premium_signed),
+            (call_leg_id, call_contract, call_premium_signed),
         ],
     };
     event_store.append(event);
 
     pnl.position_count += 1;
-    pnl.total_premium_collected += put_premium + call_premium;
+    if side == Side::Short {
+        pnl.total_premium_collected += put_premium + call_premium;
+    } else {
+        // For long positions, track separately or use negative
+        pnl.total_premium_collected -= put_premium + call_premium;
+    }
 
     PositionTracking {
         position_id,
