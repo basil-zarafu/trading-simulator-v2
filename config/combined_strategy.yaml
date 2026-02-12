@@ -1,0 +1,64 @@
+# Trading Simulator V2 - Combined Strategy
+# Short 1DTE straddle + Long 70DTE protection
+
+# Legacy strategy field (required for backward compatibility)
+strategy:
+  strategy_type: straddle
+  entry_dte: 1
+  side: "short"
+  roll_triggers:
+    - trigger_type: time
+      value: 14.0
+      legs: both
+
+simulation:
+  days: 126                    # ~6 months
+  initial_price: 75.0
+  drift: 0.0
+  volatility: 0.30
+  volatility_risk_premium: 0.05
+  seed: 42
+  risk_free_rate: 0.05
+  contract_multiplier: 1000
+
+# Short leg: 1DTE straddle (daily theta capture)
+short_leg:
+  enabled: true
+  strategy_type: straddle
+  entry_dte: 1
+  entry_time: "15:00"
+  roll_time: "14:00"
+  strike_selection: ATM
+  side: "short"
+  roll_triggers:
+    - trigger_type: time
+      value: 14.0
+      legs: both
+
+# Long leg: 70 DTE protection (tail risk hedge)
+long_leg:
+  enabled: true
+  strategy_type: strangle    # Put for downside, call for upside (or just put)
+  entry_dte: 70
+  entry_time: "15:00"
+  roll_time: "14:00"
+  strike_selection: OTM
+  strike_offset: 3.0         # 3 points OTM
+  side: "long"
+  roll_triggers:
+    - trigger_type: dte
+      value: 28.0             # Roll at 28 DTE
+      legs: both
+
+strike_config:
+  tick_size: 0.25
+  roll_type: recenter
+
+product:
+  symbol: "/CL"
+  tick_size: 0.01
+  point_value: 1000.0
+  trading_hours:
+    open: "09:00"
+    close: "17:00"
+    option_expiry: "14:30"

@@ -11,8 +11,14 @@ use std::path::Path;
 pub struct Config {
     /// Simulation settings
     pub simulation: SimulationConfig,
-    /// Strategy configuration
+    /// Strategy configuration (legacy, for backward compatibility)
     pub strategy: StrategyConfig,
+    /// Short leg configuration (optional, for combined strategies)
+    #[serde(default)]
+    pub short_leg: Option<StrategyConfig>,
+    /// Long leg configuration (optional, for combined strategies)
+    #[serde(default)]
+    pub long_leg: Option<StrategyConfig>,
     /// Product-specific settings (optional overrides)
     #[serde(default)]
     pub product: Option<ProductConfig>,
@@ -51,6 +57,9 @@ pub struct SimulationConfig {
 /// Strategy configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StrategyConfig {
+    /// Whether this leg is enabled
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
     /// Strategy type: "straddle", "strangle", "long_put", etc.
     pub strategy_type: String,
     /// DTE (days to expiration) at entry
@@ -175,6 +184,7 @@ impl Config {
                 contract_multiplier: 1000.0,
             },
             strategy: StrategyConfig {
+                enabled: true,
                 strategy_type: "straddle".to_string(),
                 entry_dte: 1,
                 entry_time: "15:00".to_string(),
@@ -190,6 +200,8 @@ impl Config {
                     },
                 ],
             },
+            short_leg: None,
+            long_leg: None,
             product: Some(ProductConfig {
                 symbol: "/CL".to_string(),
                 tick_size: 0.01,
@@ -305,6 +317,10 @@ fn default_strike_selection() -> String {
 
 fn default_legs() -> String {
     "both".to_string()
+}
+
+fn default_enabled() -> bool {
+    true
 }
 
 fn default_side() -> String {
