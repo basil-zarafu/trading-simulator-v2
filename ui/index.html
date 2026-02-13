@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Trading Simulator V2</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -17,43 +18,46 @@
             background: #1a1a2e;
             color: #eee;
             min-height: 100vh;
+            overflow-x: hidden;
         }
         
         .header {
             background: #16213e;
-            padding: 20px 30px;
+            padding: 15px 20px;
             border-bottom: 2px solid #0f3460;
+            position: sticky;
+            top: 0;
+            z-index: 100;
         }
         
         .header h1 {
-            font-size: 24px;
+            font-size: 22px;
             color: #e94560;
         }
         
         .header p {
             color: #888;
-            font-size: 14px;
-            margin-top: 5px;
+            font-size: 13px;
+            margin-top: 3px;
         }
         
-        .container {
+        .main-layout {
             display: grid;
-            grid-template-columns: 320px 1fr;
-            gap: 20px;
-            padding: 20px;
-            max-width: 1600px;
-            margin: 0 auto;
+            grid-template-columns: 300px 1fr;
+            min-height: calc(100vh - 70px);
         }
         
         .sidebar {
             background: #16213e;
-            border-radius: 12px;
             padding: 20px;
-            height: fit-content;
+            overflow-y: auto;
+            max-height: calc(100vh - 70px);
+            position: sticky;
+            top: 70px;
         }
         
         .sidebar h2 {
-            font-size: 16px;
+            font-size: 14px;
             color: #e94560;
             margin-bottom: 15px;
             text-transform: uppercase;
@@ -61,12 +65,12 @@
         }
         
         .control-group {
-            margin-bottom: 20px;
+            margin-bottom: 18px;
         }
         
         .control-group label {
             display: block;
-            font-size: 12px;
+            font-size: 11px;
             color: #888;
             margin-bottom: 5px;
             text-transform: uppercase;
@@ -76,24 +80,18 @@
         .control-group input[type="text"],
         .control-group select {
             width: 100%;
-            padding: 10px 12px;
+            padding: 8px 10px;
             background: #0f3460;
             border: 1px solid #1a1a2e;
             border-radius: 6px;
             color: #fff;
-            font-size: 14px;
-        }
-        
-        .control-group input:focus,
-        .control-group select:focus {
-            outline: none;
-            border-color: #e94560;
+            font-size: 13px;
         }
         
         .slider-container {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 8px;
         }
         
         .slider-container input[type="range"] {
@@ -101,20 +99,21 @@
         }
         
         .slider-value {
-            min-width: 50px;
+            min-width: 45px;
             text-align: right;
             font-family: monospace;
             color: #e94560;
+            font-size: 12px;
         }
         
         .btn {
             width: 100%;
-            padding: 14px;
+            padding: 12px;
             background: #e94560;
             border: none;
             border-radius: 8px;
             color: #fff;
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 600;
             cursor: pointer;
             transition: background 0.2s;
@@ -122,141 +121,165 @@
             letter-spacing: 1px;
         }
         
-        .btn:hover {
-            background: #ff6b6b;
-        }
+        .btn:hover { background: #ff6b6b; }
+        .btn:disabled { background: #444; cursor: not-allowed; }
         
-        .btn:disabled {
-            background: #444;
-            cursor: not-allowed;
-        }
-        
-        .main-content {
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-        }
-        
-        .panel {
-            background: #16213e;
-            border-radius: 12px;
+        .content-area {
             padding: 20px;
+            display: grid;
+            grid-template-rows: auto 1fr;
+            gap: 20px;
+            overflow-y: auto;
         }
         
-        .panel h3 {
-            font-size: 14px;
-            color: #888;
-            margin-bottom: 15px;
-            text-transform: uppercase;
-        }
-        
-        .stats-grid {
+        .top-section {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
             gap: 15px;
         }
         
         .stat-card {
-            background: #0f3460;
+            background: #16213e;
             padding: 15px;
             border-radius: 8px;
             text-align: center;
         }
         
         .stat-label {
-            font-size: 11px;
+            font-size: 10px;
             color: #888;
             text-transform: uppercase;
             margin-bottom: 5px;
         }
         
         .stat-value {
-            font-size: 24px;
+            font-size: 20px;
             font-weight: 600;
             color: #fff;
         }
         
-        .stat-value.positive {
-            color: #4ade80;
+        .stat-value.positive { color: #4ade80; }
+        .stat-value.negative { color: #ef4444; }
+        
+        .pnl-breakdown {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-top: 10px;
         }
         
-        .stat-value.negative {
-            color: #ef4444;
+        .pnl-item {
+            background: #0f3460;
+            padding: 10px;
+            border-radius: 6px;
+            text-align: center;
+        }
+        
+        .pnl-item .label {
+            font-size: 9px;
+            color: #888;
+            text-transform: uppercase;
+        }
+        
+        .pnl-item .value {
+            font-size: 16px;
+            font-weight: 600;
+            margin-top: 3px;
+        }
+        
+        .charts-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            min-height: 400px;
+        }
+        
+        .chart-panel {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .chart-panel h3 {
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 10px;
+            text-transform: uppercase;
         }
         
         .chart-container {
-            height: 300px;
-            background: #0f3460;
-            border-radius: 8px;
+            flex: 1;
+            position: relative;
+            min-height: 300px;
+        }
+        
+        .log-panel {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 15px;
             display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #666;
+            flex-direction: column;
+            max-height: 500px;
+        }
+        
+        .log-panel h3 {
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 10px;
+            text-transform: uppercase;
         }
         
         .log-container {
-            height: 250px;
-            background: #0f3460;
-            border-radius: 8px;
-            padding: 15px;
+            flex: 1;
             overflow-y: auto;
             font-family: 'Courier New', monospace;
-            font-size: 12px;
-            line-height: 1.6;
+            font-size: 11px;
+            line-height: 1.5;
+            background: #0f3460;
+            border-radius: 6px;
+            padding: 10px;
         }
         
         .log-entry {
-            padding: 4px 0;
+            padding: 3px 0;
             border-bottom: 1px solid #1a1a2e;
         }
         
-        .log-entry.open {
-            color: #4ade80;
+        .log-entry.open { color: #4ade80; }
+        .log-entry.close { color: #e94560; }
+        .log-entry.hold { color: #888; }
+        
+        .bottom-section {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
         }
         
-        .log-entry.close {
-            color: #e94560;
+        @media (max-width: 1400px) {
+            .main-layout {
+                grid-template-columns: 280px 1fr;
+            }
+            .charts-section {
+                grid-template-columns: 1fr;
+            }
+            .bottom-section {
+                grid-template-columns: 1fr;
+            }
         }
         
-        .log-entry.hold {
-            color: #888;
-        }
-        
-        /* Toggle switch */
-        .toggle {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        
-        .toggle input[type="checkbox"] {
-            width: 40px;
-            height: 20px;
-            appearance: none;
-            background: #444;
-            border-radius: 20px;
-            position: relative;
-            cursor: pointer;
-        }
-        
-        .toggle input[type="checkbox"]:checked {
-            background: #e94560;
-        }
-        
-        .toggle input[type="checkbox"]::after {
-            content: '';
-            position: absolute;
-            width: 16px;
-            height: 16px;
-            background: #fff;
-            border-radius: 50%;
-            top: 2px;
-            left: 2px;
-            transition: left 0.2s;
-        }
-        
-        .toggle input[type="checkbox"]:checked::after {
-            left: 22px;
+        @media (max-width: 1000px) {
+            .main-layout {
+                grid-template-columns: 1fr;
+            }
+            .sidebar {
+                position: static;
+                max-height: none;
+            }
+            .top-section {
+                grid-template-columns: repeat(2, 1fr);
+            }
         }
     </style>
 </head>
@@ -266,7 +289,7 @@
         <p>Oil Futures (/CL) Options Strategy Backtester</p>
     </div>
     
-    <div class="container">
+    <div class="main-layout">
         <div class="sidebar">
             <h2>Configuration</h2>
             
@@ -301,7 +324,7 @@
             </div>
             
             <div class="control-group">
-                <label>VRP - Volatility Risk Premium (%)</label>
+                <label>VRP (%)</label>
                 <div class="slider-container">
                     <input type="range" id="vrp" min="0" max="15" value="5">
                     <span class="slider-value" id="vrpValue">5%</span>
@@ -313,66 +336,65 @@
                 <input type="number" id="seed" value="42">
             </div>
             
-            <div class="control-group toggle">
-                <input type="checkbox" id="enableLongLeg" checked>
-                <label for="enableLongLeg">Enable Long Protection</label>
-            </div>
-            
             <button class="btn" id="runBtn" onclick="runSimulation()">▶ Run Simulation</button>
         </div>
         
-        <div class="main-content">
-            <div class="panel">
-                <h3>Performance Summary</h3>
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <div class="stat-label">Net P&L</div>
-                        <div class="stat-value positive" id="netPnl">+$0</div>
+        <div class="content-area">
+            <div class="top-section">
+                <div class="stat-card">
+                    <div class="stat-label">Total P&L</div>
+                    <div class="stat-value" id="netPnl">$0</div>
+                    <div class="pnl-breakdown">
+                        <div class="pnl-item">
+                            <div class="label">Short/Day</div>
+                            <div class="value" id="shortPnlPerDay">$0</div>
+                        </div>
+                        <div class="pnl-item">
+                            <div class="label">Long/Day</div>
+                            <div class="value" id="longPnlPerDay">$0</div>
+                        </div>
+                        <div class="pnl-item">
+                            <div class="label">Net/Day</div>
+                            <div class="value" id="totalPnlPerDay">$0</div>
+                        </div>
                     </div>
-                    <div class="stat-card">
-                        <div class="stat-label">Positions</div>
-                        <div class="stat-value" id="positionCount">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Positions</div>
+                    <div class="stat-value" id="positionCount">0</div>
+                    <div style="font-size: 11px; color: #888; margin-top: 5px;">
+                        Short: <span id="shortPositions">0</span> | Long: <span id="longPositions">0</span>
                     </div>
-                    <div class="stat-card">
-                        <div class="stat-label">Win Rate</div>
-                        <div class="stat-value" id="winRate">0%</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Win Rates</div>
+                    <div class="stat-value" id="winRate">0%</div>
+                    <div style="font-size: 11px; color: #888; margin-top: 5px;">
+                        S: <span id="shortWinRate">0</span>% | L: <span id="longWinRate">0</span>%
                     </div>
-                    <div class="stat-card">
-                        <div class="stat-label">Final Price</div>
-                        <div class="stat-value" id="finalPrice">$0.00</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Final Price</div>
+                    <div class="stat-value" id="finalPrice">$0.00</div>
+                </div>
+            </div>
+            
+            <div class="charts-section">
+                <div class="chart-panel">
+                    <h3>Price Chart</h3>
+                    <div class="chart-container">
+                        <canvas id="priceChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-panel">
+                    <h3>P&L Chart</h3>
+                    <div class="chart-container">
+                        <canvas id="pnlChart"></canvas>
                     </div>
                 </div>
             </div>
             
-            <div class="panel">
-                <h3>P&L Per Day</h3>
-                <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr);">
-                    <div class="stat-card">
-                        <div class="stat-label">Short Leg</div>
-                        <div class="stat-value positive" id="shortPnlPerDay">+$0</div>
-                        <div class="stat-label" style="font-size: 10px; margin-top: 5px;"><span id="shortPositions">0</span> positions | <span id="shortWinRate">0</span>% WR</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-label">Long Leg</div>
-                        <div class="stat-value negative" id="longPnlPerDay">-$0</div>
-                        <div class="stat-label" style="font-size: 10px; margin-top: 5px;"><span id="longPositions">0</span> positions | <span id="longWinRate">0</span>% WR</div>
-                    </div>
-                    <div class="stat-card" style="background: #1a1a2e; border: 2px solid #e94560;">
-                        <div class="stat-label">Total / Day</div>
-                        <div class="stat-value" id="totalPnlPerDay">$0</div>
-                        <div class="stat-label" style="font-size: 10px; margin-top: 5px;">Net daily return</div>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="panel">
-                <h3>P&L Chart</h3>
-                <div class="chart-container" style="height: 350px; position: relative;">
-                    <canvas id="pnlChart"></canvas>
-                </div>
-            </div>
-            
-            <div class="panel">
+            <div class="log-panel">
                 <h3>Trade Log</h3>
                 <div class="log-container" id="tradeLog">
                     <div class="log-entry">Ready to run simulation...</div>
@@ -386,21 +408,22 @@
         document.getElementById('simDays').addEventListener('input', function() {
             document.getElementById('simDaysValue').textContent = this.value;
         });
-        
         document.getElementById('volatility').addEventListener('input', function() {
             document.getElementById('volatilityValue').textContent = this.value + '%';
         });
-        
         document.getElementById('vrp').addEventListener('input', function() {
             document.getElementById('vrpValue').textContent = this.value + '%';
         });
+        
+        // Chart instances
+        let priceChartInstance = null;
+        let pnlChartInstance = null;
         
         async function runSimulation() {
             const btn = document.getElementById('runBtn');
             btn.disabled = true;
             btn.textContent = '⏳ Running...';
             
-            // Get configuration (snake_case to match Rust struct)
             const config = {
                 days: parseInt(document.getElementById('simDays').value),
                 initial_price: parseFloat(document.getElementById('initialPrice').value),
@@ -410,11 +433,9 @@
                 strategy: document.getElementById('strategyType').value
             };
             
-            // Clear log
             const log = document.getElementById('tradeLog');
             log.innerHTML = '<div class="log-entry">Starting simulation...</div>';
             
-            // Call Rust backend
             try {
                 const result = await invoke('run_simulation', { config });
                 displayResults(result);
@@ -427,38 +448,20 @@
         }
         
         function displayResults(result) {
-            // Update stats (using snake_case from Rust API)
+            // Update stats
             const netPnl = result.net_pnl || 0;
-            const positionCount = result.position_count || 0;
-            const winRate = result.win_rate || 0;
-            const finalPrice = result.final_price || 0;
-            
-            document.getElementById('netPnl').textContent = 
-                (netPnl >= 0 ? '+$' : '-$') + Math.abs(netPnl).toLocaleString();
+            document.getElementById('netPnl').textContent = (netPnl >= 0 ? '+$' : '-$') + Math.abs(netPnl).toLocaleString();
             document.getElementById('netPnl').className = 'stat-value ' + (netPnl >= 0 ? 'positive' : 'negative');
             
-            document.getElementById('positionCount').textContent = positionCount;
-            document.getElementById('winRate').textContent = winRate.toFixed(1) + '%';
-            document.getElementById('finalPrice').textContent = '$' + finalPrice.toFixed(2);
+            document.getElementById('positionCount').textContent = result.position_count || 0;
+            document.getElementById('winRate').textContent = (result.win_rate || 0).toFixed(0) + '%';
+            document.getElementById('finalPrice').textContent = '$' + (result.final_price || 0).toFixed(2);
             
-            // Update P&L per day metrics
-            const shortPnlPerDay = result.short_pnl_per_day || 0;
-            const longPnlPerDay = result.long_pnl_per_day || 0;
-            const totalPnlPerDay = result.total_pnl_per_day || 0;
+            // P&L breakdown
+            document.getElementById('shortPnlPerDay').textContent = '$' + (result.short_pnl_per_day || 0).toFixed(0);
+            document.getElementById('longPnlPerDay').textContent = '$' + (result.long_pnl_per_day || 0).toFixed(0);
+            document.getElementById('totalPnlPerDay').textContent = '$' + (result.total_pnl_per_day || 0).toFixed(0);
             
-            document.getElementById('shortPnlPerDay').textContent = 
-                (shortPnlPerDay >= 0 ? '+$' : '-$') + Math.abs(shortPnlPerDay).toFixed(0);
-            document.getElementById('shortPnlPerDay').className = 'stat-value ' + (shortPnlPerDay >= 0 ? 'positive' : 'negative');
-            
-            document.getElementById('longPnlPerDay').textContent = 
-                (longPnlPerDay >= 0 ? '+$' : '-$') + Math.abs(longPnlPerDay).toFixed(0);
-            document.getElementById('longPnlPerDay').className = 'stat-value ' + (longPnlPerDay >= 0 ? 'positive' : 'negative');
-            
-            document.getElementById('totalPnlPerDay').textContent = 
-                (totalPnlPerDay >= 0 ? '+$' : '-$') + Math.abs(totalPnlPerDay).toFixed(0);
-            document.getElementById('totalPnlPerDay').className = 'stat-value ' + (totalPnlPerDay >= 0 ? 'positive' : 'negative');
-            
-            // Update position counts and win rates
             document.getElementById('shortPositions').textContent = result.short_positions || 0;
             document.getElementById('longPositions').textContent = result.long_positions || 0;
             document.getElementById('shortWinRate').textContent = (result.short_win_rate || 0).toFixed(0);
@@ -474,34 +477,32 @@
                     entry.textContent = trade.message;
                     log.appendChild(entry);
                 });
-            } else {
-                log.innerHTML = '<div class="log-entry">No trades recorded</div>';
             }
             
-            // Generate P&L chart
-            generatePnlChart(result.trades || []);
+            // Generate charts
+            generateCharts(result);
         }
         
-        // Global chart instance
-        let pnlChartInstance = null;
+        function generateCharts(result) {
+            generatePnlChart(result);
+            generatePriceChart(result);
+        }
         
-        function generatePnlChart(trades) {
+        function generatePnlChart(result) {
             const ctx = document.getElementById('pnlChart').getContext('2d');
+            if (pnlChartInstance) pnlChartInstance.destroy();
             
-            // Destroy existing chart if any
-            if (pnlChartInstance) {
-                pnlChartInstance.destroy();
-            }
+            const strategy = document.getElementById('strategyType').value;
+            const isCombined = strategy === 'combined';
+            const isLong = strategy === 'long_protection';
+            const isShort = strategy === 'straddle';
             
-            // Parse trades to extract cumulative P&L by day
+            // Parse trades
             const dayData = {};
-            let cumulativeShort = 0;
-            let cumulativeLong = 0;
-            let cumulativeTotal = 0;
+            let cumulativeShort = 0, cumulativeLong = 0, cumulativeTotal = 0;
             
-            trades.forEach(trade => {
+            (result.trades || []).forEach(trade => {
                 if (trade.trade_type === 'close') {
-                    // Extract day and P&L from message
                     const dayMatch = trade.message.match(/Day\s+(\d+)/);
                     const pnlMatch = trade.message.match(/P&L:\s*\$([-\d,]+)/);
                     
@@ -509,118 +510,141 @@
                         const day = parseInt(dayMatch[1]);
                         const pnl = parseInt(pnlMatch[1].replace(/,/g, ''));
                         
-                        // Determine if short or long leg
-                        const isShort = trade.message.includes('[SHORT]') || 
-                                       (!trade.message.includes('[LONG]') && pnl > 0); // Heuristic
-                        const isLong = trade.message.includes('[LONG]') || 
-                                      (!trade.message.includes('[SHORT]') && pnl < 0);
+                        // Determine leg from message prefix or strategy
+                        let isShortLeg = trade.message.includes('[SHORT]');
+                        let isLongLeg = trade.message.includes('[LONG]');
                         
-                        if (isShort) {
-                            cumulativeShort += pnl;
-                        } else if (isLong) {
-                            cumulativeLong += pnl;
-                        } else {
-                            // Default: positive P&L = short, negative = long
-                            if (pnl > 0) cumulativeShort += pnl;
-                            else cumulativeLong += pnl;
+                        // For single strategies, use strategy type
+                        if (!isShortLeg && !isLongLeg) {
+                            if (isShort) isShortLeg = true;
+                            else if (isLong) isLongLeg = true;
+                            else {
+                                // Combined but no prefix - infer from P&L pattern
+                                isShortLeg = pnl > 0;  // Shorts usually profitable
+                                isLongLeg = pnl < 0;   // Longs usually lose
+                            }
                         }
                         
+                        if (isShortLeg) cumulativeShort += pnl;
+                        if (isLongLeg) cumulativeLong += pnl;
                         cumulativeTotal = cumulativeShort + cumulativeLong;
                         
-                        dayData[day] = {
-                            short: cumulativeShort,
-                            long: cumulativeLong,
-                            total: cumulativeTotal
-                        };
+                        dayData[day] = { short: cumulativeShort, long: cumulativeLong, total: cumulativeTotal };
                     }
                 }
             });
             
-            // Convert to arrays for Chart.js
             const sortedDays = Object.keys(dayData).map(Number).sort((a, b) => a - b);
-            const labels = sortedDays.map(d => 'Day ' + d);
-            const shortData = sortedDays.map(d => dayData[d].short);
-            const longData = sortedDays.map(d => dayData[d].long);
-            const totalData = sortedDays.map(d => dayData[d].total);
-            
             if (sortedDays.length === 0) {
-                // No close trades yet - show placeholder
-                document.querySelector('.chart-container').innerHTML = '<span style="color: #666; display: flex; align-items: center; justify-content: center; height: 100%;">Run simulation to see P&L chart</span>';
+                document.getElementById('pnlChart').parentElement.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#666;">No close trades yet</div>';
                 return;
             }
             
-            // Create chart
+            const labels = sortedDays.map(d => 'D' + d);
+            const datasets = [];
+            
+            // Total always shown
+            datasets.push({
+                label: 'Total P&L',
+                data: sortedDays.map(d => dayData[d].total),
+                borderColor: '#e94560',
+                backgroundColor: 'rgba(233, 69, 96, 0.1)',
+                fill: true,
+                tension: 0.3,
+                borderWidth: 2
+            });
+            
+            // Show leg breakdown for combined strategy
+            if (isCombined) {
+                datasets.push({
+                    label: 'Short Leg',
+                    data: sortedDays.map(d => dayData[d].short),
+                    borderColor: '#4ade80',
+                    backgroundColor: 'transparent',
+                    borderWidth: 2,
+                    tension: 0.3
+                });
+                datasets.push({
+                    label: 'Long Leg',
+                    data: sortedDays.map(d => dayData[d].long),
+                    borderColor: '#60a5fa',
+                    backgroundColor: 'transparent',
+                    borderWidth: 2,
+                    tension: 0.3
+                });
+            }
+            
             pnlChartInstance = new Chart(ctx, {
                 type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [
-                        {
-                            label: 'Total P&L',
-                            data: totalData,
-                            borderColor: '#e94560',
-                            backgroundColor: 'rgba(233, 69, 96, 0.1)',
-                            fill: true,
-                            tension: 0.4,
-                            borderWidth: 3
-                        },
-                        {
-                            label: 'Short Leg',
-                            data: shortData,
-                            borderColor: '#4ade80',
-                            backgroundColor: 'transparent',
-                            borderWidth: 2,
-                            tension: 0.4
-                        },
-                        {
-                            label: 'Long Leg',
-                            data: longData,
-                            borderColor: '#60a5fa',
-                            backgroundColor: 'transparent',
-                            borderWidth: 2,
-                            tension: 0.4
-                        }
-                    ]
-                },
+                data: { labels, datasets },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    interaction: {
-                        intersect: false,
-                        mode: 'index'
-                    },
+                    interaction: { intersect: false, mode: 'index' },
                     plugins: {
-                        legend: {
-                            labels: { color: '#eee' }
-                        },
+                        legend: { labels: { color: '#eee', font: { size: 11 } } },
                         tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    return context.dataset.label + ': $' + context.parsed.y.toLocaleString();
-                                }
-                            }
+                            callbacks: { label: ctx => ctx.dataset.label + ': $' + ctx.parsed.y.toLocaleString() }
                         }
                     },
                     scales: {
-                        x: {
-                            ticks: { color: '#888' },
-                            grid: { color: '#0f3460' }
-                        },
-                        y: {
-                            ticks: { 
-                                color: '#888',
-                                callback: function(value) {
-                                    return '$' + value.toLocaleString();
-                                }
-                            },
-                            grid: { color: '#0f3460' }
-                        }
+                        x: { ticks: { color: '#888', font: { size: 10 } }, grid: { color: '#0f3460' } },
+                        y: { ticks: { color: '#888', font: { size: 10 }, callback: v => '$' + (v/1000).toFixed(0) + 'k' }, grid: { color: '#0f3460' } }
                     }
                 }
             });
         }
         
-        // Call local web API
+        function generatePriceChart(result) {
+            const ctx = document.getElementById('priceChart').getContext('2d');
+            if (priceChartInstance) priceChartInstance.destroy();
+            
+            // Extract price data from trades
+            const prices = [];
+            (result.trades || []).forEach(trade => {
+                const dayMatch = trade.message.match(/Day\s+(\d+)/);
+                const priceMatch = trade.message.match(/Price\s+\$([\d.]+)/);
+                if (dayMatch && priceMatch && !prices.find(p => p.day === parseInt(dayMatch[1]))) {
+                    prices.push({ day: parseInt(dayMatch[1]), price: parseFloat(priceMatch[1]) });
+                }
+            });
+            
+            if (prices.length < 2) {
+                document.getElementById('priceChart').parentElement.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#666;">Price data not available</div>';
+                return;
+            }
+            
+            prices.sort((a, b) => a.day - b.day);
+            
+            priceChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: prices.map(p => 'D' + p.day),
+                    datasets: [{
+                        label: 'Oil Price',
+                        data: prices.map(p => p.price),
+                        borderColor: '#fbbf24',
+                        backgroundColor: 'rgba(251, 191, 36, 0.1)',
+                        fill: true,
+                        tension: 0.2,
+                        borderWidth: 2,
+                        pointRadius: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        x: { ticks: { color: '#888', font: { size: 10 } }, grid: { color: '#0f3460' } },
+                        y: { ticks: { color: '#888', font: { size: 10 }, callback: v => '$' + v }, grid: { color: '#0f3460' } }
+                    }
+                }
+            });
+        }
+        
         async function invoke(cmd, args) {
             if (cmd === 'run_simulation') {
                 const response = await fetch('/run', {
@@ -628,11 +652,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(args.config)
                 });
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
-                }
-                
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 return await response.json();
             }
         }
