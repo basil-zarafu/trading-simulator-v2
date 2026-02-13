@@ -207,7 +207,7 @@ strike_config:
         
         # Parse output
         trades = self.parse_trades(stdout, strategy)
-        net_pnl, position_count, final_price = self.extract_summary(stdout)
+        net_pnl, position_count, final_price = self.extract_summary(stdout, trades)
         win_rate = self.calculate_win_rate(trades)
         
         return SimResult(
@@ -296,18 +296,29 @@ strike_config:
         
         return (wins / len(close_trades)) * 100.0
     
-    def extract_summary(self, output):
+    def extract_summary(self, output, trades=None):
         """Extract summary statistics from simulation output"""
+        # Calculate P&L from close trades (more accurate than summary for long positions)
         net_pnl = 0.0
+        if trades:
+            for t in trades:
+                if t['trade_type'] == 'close':
+                    match = re.search(r'P&L:\s*\$(-?[0-9,]+)', t['message'])
+                    if match:
+                        net_pnl += float(match.group(1).replace(',', ''))
+        
+        # Fallback to summary line if no trades
+        if net_pnl == 0.0:
+            for line in output.split('\n'):
+                if 'Net P&L:' in line:
+                    match = re.search(r'\(\$?(-?[0-9,]+) total\)', line)
+                    if match:
+                        net_pnl = float(match.group(1).replace(',', ''))
+        
         position_count = 0
         final_price = 0.0
         
         for line in output.split('\n'):
-            if 'Net P&L:' in line:
-                match = re.search(r'\(\$?(-?[0-9,]+) total\)', line)
-                if match:
-                    net_pnl = float(match.group(1).replace(',', ''))
-            
             if 'Total positions opened:' in line:
                 parts = line.split(':')
                 if len(parts) > 1:

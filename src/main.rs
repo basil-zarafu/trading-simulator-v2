@@ -196,7 +196,13 @@ fn main() {
                         (pos.put_entry_premium + pos.call_entry_premium) - (put_close + call_close)
                     };
                     let position_pnl_dollars = position_pnl * config.simulation.contract_multiplier;
-                    pnl_summary.total_premium_paid += put_close + call_close;
+                    
+                    // Track close value: for shorts it's paid (we buy back), for longs it's collected (we sell)
+                    if is_long {
+                        pnl_summary.total_premium_collected += put_close + call_close;
+                    } else {
+                        pnl_summary.total_premium_paid += put_close + call_close;
+                    }
                     
                     let reason_str = format!("{:?}", reason);
                     print!("Day {} ({}): Price ${:.2} | ", day, date_str, current_price);
