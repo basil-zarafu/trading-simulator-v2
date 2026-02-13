@@ -244,6 +244,9 @@ fn main() {
                     );
                     let new_total = new_pos.put_entry_premium + new_pos.call_entry_premium;
                     let new_total_dollars = new_total * config.simulation.contract_multiplier;
+                    // For longs, show negative premium (money we paid)
+                    let new_display_premium = if is_long { -new_total } else { new_total };
+                    let new_display_premium_dollars = if is_long { -new_total_dollars } else { new_total_dollars };
                     let roll_type_str = if use_same_strikes { " (same strikes)" } else { "" };
                     println!(
                         "  -> OPENED position {} at {} | Strikes: Put ${:.2} Call ${:.2} | ${:.2} per barrel (${:.0} total){}",
@@ -251,8 +254,8 @@ fn main() {
                         &config.strategy.roll_time,
                         new_pos.put_strike,
                         new_pos.call_strike,
-                        new_total,
-                        new_total_dollars,
+                        new_display_premium,
+                        new_display_premium_dollars,
                         roll_type_str
                     );
                     print_greeks(&new_pos);
@@ -287,8 +290,12 @@ fn main() {
                 implied_vol,
             );
 
+            let is_long = config.strategy.side == "long";
             let total_premium = pos.put_entry_premium + pos.call_entry_premium;
             let total_premium_dollars = total_premium * config.simulation.contract_multiplier;
+            // For longs, show negative premium (money we paid)
+            let display_premium = if is_long { -total_premium } else { total_premium };
+            let display_premium_dollars = if is_long { -total_premium_dollars } else { total_premium_dollars };
             print!("Day {} ({}): Price ${:.2} | ", day, date_str, current_price);
             println!(
                 "OPENED position {} at {} | Strikes: Put ${:.2} Call ${:.2} | ${:.2} per barrel (${:.0} total)",
@@ -296,8 +303,8 @@ fn main() {
                 &config.strategy.entry_time,
                 pos.put_strike,
                 pos.call_strike,
-                total_premium,
-                total_premium_dollars
+                display_premium,
+                display_premium_dollars
             );
             print_greeks(&pos);
 
