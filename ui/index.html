@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Trading Simulator V2</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -366,8 +367,8 @@
             
             <div class="panel">
                 <h3>P&L Chart</h3>
-                <div class="chart-container">
-                    <span>Chart will appear here after simulation</span>
+                <div class="chart-container" style="height: 350px; position: relative;">
+                    <canvas id="pnlChart"></canvas>
                 </div>
             </div>
             
@@ -476,6 +477,147 @@
             } else {
                 log.innerHTML = '<div class="log-entry">No trades recorded</div>';
             }
+            
+            // Generate P&L chart
+            generatePnlChart(result.trades || []);
+        }
+        
+        // Global chart instance
+        let pnlChartInstance = null;
+        
+        function generatePnlChart(trades) {
+            const ctx = document.getElementById('pnlChart').getContext('2d');
+            
+            // Destroy existing chart if any
+            if (pnlChartInstance) {
+                pnlChartInstance.destroy();
+            }
+            
+            // Parse trades to extract cumulative P&L by day
+            const dayData = {};
+            let cumulativeShort = 0;
+            let cumulativeLong = 0;
+            let cumulativeTotal = 0;
+            
+            trades.forEach(trade => {
+                if (trade.trade_type === 'close') {
+                    // Extract day and P&L from message
+                    const dayMatch = trade.message.match(/Day\s+(\d+)/);
+                    const pnlMatch = trade.message.match(/P&L:\s*\$([-\d,]+)/);
+                    
+                    if (dayMatch && pnlMatch) {
+                        const day = parseInt(dayMatch[1]);
+                        const pnl = parseInt(pnlMatch[1].replace(/,/g, ''));
+                        
+                        // Determine if short or long leg
+                        const isShort = trade.message.includes('[SHORT]') || 
+                                       (!trade.message.includes('[LONG]') && pnl > 0); // Heuristic
+                        const isLong = trade.message.includes('[LONG]') || 
+                                      (!trade.message.includes('[SHORT]') && pnl < 0);
+                        
+                        if (isShort) {
+                            cumulativeShort += pnl;
+                        } else if (isLong) {
+                            cumulativeLong += pnl;
+                        } else {
+                            // Default: positive P&L = short, negative = long
+                            if (pnl > 0) cumulativeShort += pnl;
+                            else cumulativeLong += pnl;
+                        }
+                        
+                        cumulativeTotal = cumulativeShort + cumulativeLong;
+                        
+                        dayData[day] = {
+                            short: cumulativeShort,
+                            long: cumulativeLong,
+                            total: cumulativeTotal
+                        };
+                    }
+                }
+            });
+            
+            // Convert to arrays for Chart.js
+            const sortedDays = Object.keys(dayData).map(Number).sort((a, b) => a - b);
+            const labels = sortedDays.map(d => 'Day ' + d);
+            const shortData = sortedDays.map(d => dayData[d].short);
+            const longData = sortedDays.map(d => dayData[d].long);
+            const totalData = sortedDays.map(d => dayData[d].total);
+            
+            if (sortedDays.length === 0) {
+                // No close trades yet - show placeholder
+                document.querySelector('.chart-container').innerHTML = '<span style="color: #666; display: flex; align-items: center; justify-content: center; height: 100%;">Run simulation to see P&L chart</span>';
+                return;
+            }
+            
+            // Create chart
+            pnlChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Total P&L',
+                            data: totalData,
+                            borderColor: '#e94560',
+                            backgroundColor: 'rgba(233, 69, 96, 0.1)',
+                            fill: true,
+                            tension: 0.4,
+                            borderWidth: 3
+                        },
+                        {
+                            label: 'Short Leg',
+                            data: shortData,
+                            borderColor: '#4ade80',
+                            backgroundColor: 'transparent',
+                            borderWidth: 2,
+                            tension: 0.4
+                        },
+                        {
+                            label: 'Long Leg',
+                            data: longData,
+                            borderColor: '#60a5fa',
+                            backgroundColor: 'transparent',
+                            borderWidth: 2,
+                            tension: 0.4
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        intersect: false,
+                        mode: 'index'
+                    },
+                    plugins: {
+                        legend: {
+                            labels: { color: '#eee' }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.dataset.label + ': $' + context.parsed.y.toLocaleString();
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: { color: '#888' },
+                            grid: { color: '#0f3460' }
+                        },
+                        y: {
+                            ticks: { 
+                                color: '#888',
+                                callback: function(value) {
+                                    return '$' + value.toLocaleString();
+                                }
+                            },
+                            grid: { color: '#0f3460' }
+                        }
+                    }
+                }
+            });
         }
         
         // Call local web API
