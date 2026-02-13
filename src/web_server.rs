@@ -33,8 +33,43 @@ struct TradeEntry {
 }
 
 async fn run_simulation(req: web::Json<SimRequest>) -> Result<HttpResponse> {
-    // Create temporary config file
-    let config_yaml = format!(r#"
+    // Create config based on selected strategy
+    let config_yaml = if req.strategy == "long_protection" {
+        // Long protection: 70 DTE puts with recentering
+        format!(r#"
+simulation:
+  days: {}
+  initial_price: {:.2}
+  drift: 0.0
+  volatility: {:.2}
+  volatility_risk_premium: {:.2}
+  seed: {}
+  risk_free_rate: 0.05
+  contract_multiplier: 1000
+
+strategy:
+  strategy_type: straddle
+  entry_dte: 70
+  entry_time: "15:00"
+  roll_time: "14:00"
+  strike_selection: OTM
+  strike_offset: 3.0
+  side: "long"
+  roll_triggers:
+    - trigger_type: dte
+      value: 28.0
+      legs: both
+    - trigger_type: profit_target
+      value: 0.14
+      legs: both
+
+strike_config:
+  tick_size: 0.25
+  roll_type: recenter
+"#, req.days, req.initial_price, req.volatility, req.vrp, req.seed)
+    } else {
+        // Default: 1DTE short straddle
+        format!(r#"
 simulation:
   days: {}
   initial_price: {:.2}
@@ -60,7 +95,8 @@ strategy:
 strike_config:
   tick_size: 0.25
   roll_type: recenter
-"#, req.days, req.initial_price, req.volatility, req.vrp, req.seed);
+"#, req.days, req.initial_price, req.volatility, req.vrp, req.seed)
+    };
 
     let config_path = "/tmp/sim_config.yaml";
     std::fs::write(config_path, config_yaml).map_err(|e| {
