@@ -123,9 +123,19 @@ strike_config:
         trades = self.parse_trades(stdout)
         net_pnl, position_count, final_price = self.extract_summary(stdout)
         
+        # Calculate win rate by parsing P&L from close trades
+        # A win is when P&L > 0 (positive return)
         win_rate = 0.0
         if position_count > 0:
-            wins = sum(1 for t in trades if t['trade_type'] == 'close' and '-$' not in t['message'])
+            wins = 0
+            for t in trades:
+                if t['trade_type'] == 'close':
+                    # Extract P&L from message like "P&L: $-5197" or "P&L: $1234"
+                    match = re.search(r'P&L:\s*\$(-?[0-9,]+)', t['message'])
+                    if match:
+                        pnl = float(match.group(1).replace(',', ''))
+                        if pnl > 0:
+                            wins += 1
             win_rate = (wins / position_count) * 100.0
         
         return {
