@@ -258,15 +258,23 @@ strike_config:
         return all_trades
     
     def parse_trades(self, output, source=''):
-        """Parse trades from simulation output"""
+        """Parse trades from simulation output and fix display for longs"""
         trades = []
         prefix = f"[{source}] " if source else ""
+        is_long = 'long' in source.lower()
         
         for line in output.split('\n'):
-            if 'OPENED position' in line:
+            if 'OPENED position' in line or '-> OPENED position' in line:
+                # Fix premium display for longs - show negative
+                msg = line.strip()
+                if is_long:
+                    # Change $6.13 to $-6.13 for longs (money spent, not received)
+                    # Match the premium amount after the pipe and before "per barrel"
+                    msg = re.sub(r'\| \$(\d+\.\d{2}) per barrel', r'| $-\1 per barrel', msg)
+                    msg = re.sub(r'\(\$(\d+) total\)', r'($-\1 total)', msg)
                 trades.append({
                     'trade_type': 'open',
-                    'message': prefix + line.strip()
+                    'message': prefix + msg
                 })
             elif 'CLOSED position' in line:
                 trades.append({
