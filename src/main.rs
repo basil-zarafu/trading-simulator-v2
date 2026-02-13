@@ -183,8 +183,28 @@ fn main() {
             match decision {
                 triggers::RollDecision::RollBoth { reason } => {
                     // Close current position
-                    let put_close = calculate_close_value(current_price, pos.put_strike, false);
-                    let call_close = calculate_close_value(current_price, pos.call_strike, true);
+                    // Calculate remaining DTE for proper option pricing
+                    let remaining_dte = calendar.calculate_dte(day, pos.expiration_day);
+                    
+                    // Use Black76 pricing for early closes (DTE > 0), intrinsic for expiration
+                    let (put_close, call_close) = if remaining_dte > 0 {
+                        // Early close: use Black76 to include time value
+                        let time_to_expiry = remaining_dte as f64 / 252.0;
+                        let put = Black76::price(
+                            current_price, pos.put_strike, time_to_expiry,
+                            config.simulation.risk_free_rate, implied_vol, false
+                        );
+                        let call = Black76::price(
+                            current_price, pos.call_strike, time_to_expiry,
+                            config.simulation.risk_free_rate, implied_vol, true
+                        );
+                        (put, call)
+                    } else {
+                        // Expiration: use intrinsic value only
+                        let put = calculate_close_value(current_price, pos.put_strike, false);
+                        let call = calculate_close_value(current_price, pos.call_strike, true);
+                        (put, call)
+                    };
                     
                     // Calculate P&L based on position side
                     let is_long = config.strategy.side == "long";
