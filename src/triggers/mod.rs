@@ -117,10 +117,29 @@ pub fn evaluate_triggers(
                 
                 let entry_value = position.put_entry_premium + position.call_entry_premium;
                 let current_value = current_put + current_call;
-                let unrealized_pnl = entry_value - current_value; // Positive = profit for shorts
-                let max_profit = entry_value; // Max profit = keeping all premium
+                // For shorts: profit = entry - current (we want options to lose value)
+                // For longs: profit = current - entry (we want options to gain value)
+                let is_long = config.strategy.side == "long";
+                let unrealized_pnl = if is_long {
+                    current_value - entry_value // Positive = profit for longs
+                } else {
+                    entry_value - current_value // Positive = profit for shorts
+                };
+                let max_profit = if is_long { f64::INFINITY } else { entry_value }; // Longs have unlimited upside
                 
-                if max_profit > 0.0 && unrealized_pnl >= target_fraction * max_profit {
+                // Check if we've hit the profit target
+                // For shorts: profit is capped at entry_value (100% = collect all premium)
+                // For longs: use the target as absolute dollar amount relative to entry
+                let profit_target_hit = if is_long {
+                    // Longs: profit target is % gain on premium paid
+                    let profit_percent = if entry_value > 0.0 { unrealized_pnl / entry_value } else { 0.0 };
+                    profit_percent >= target_fraction
+                } else {
+                    // Shorts: profit target is % of max profit (entry_value)
+                    max_profit > 0.0 && unrealized_pnl >= target_fraction * max_profit
+                };
+                
+                if profit_target_hit {
                     return match trigger.legs.as_str() {
                         "put" => RollDecision::RollPut { 
                             reason: RollReason::ProfitTarget { 
