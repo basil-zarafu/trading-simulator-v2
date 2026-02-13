@@ -18,3 +18,7 @@ path = "src/main.rs"
 [[bin]]
 name = "web-server"
 path = "src/web_server.rs"
+
+[[bin]]
+name = "combined"
+path = "src/combined.rs"
