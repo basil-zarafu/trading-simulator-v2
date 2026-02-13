@@ -145,7 +145,7 @@ strike_config:
                 trades.append({'trade_type': 'close', 'message': line.strip()})
             elif 'Holding pos' in line:
                 trades.append({'trade_type': 'hold', 'message': line.strip()})
-        return trades[:50]
+        return trades
     
     def extract_summary(self, output):
         net_pnl = 0.0
@@ -154,7 +154,8 @@ strike_config:
         
         for line in output.split('\n'):
             if 'Net P&L:' in line:
-                match = re.search(r'\(\$([0-9,]+) total\)', line)
+                # Match ($-24,604 total) or ($24,604 total) - capture minus sign
+                match = re.search(r'\(\$?(-?[0-9,]+) total\)', line)
                 if match:
                     net_pnl = float(match.group(1).replace(',', ''))
             
