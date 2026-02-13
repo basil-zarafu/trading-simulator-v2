@@ -154,9 +154,6 @@ strategy:
     - trigger_type: dte
       value: 28.0
       legs: both
-    - trigger_type: profit_target
-      value: 0.14
-      legs: both
 
 strike_config:
   tick_size: 0.25

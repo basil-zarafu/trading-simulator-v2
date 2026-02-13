@@ -38,9 +38,7 @@ long_leg:
     - trigger_type: dte
       value: 28.0
       legs: both
-    - trigger_type: profit_target
-      value: 0.14
-      legs: both
+    # NOTE: Profit target disabled for now - only rolling at 28 DTE
 
 strike_config:
   tick_size: 0.25
