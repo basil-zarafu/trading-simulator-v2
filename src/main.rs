@@ -531,10 +531,11 @@ fn open_position_with_pricing(
 
     pnl.position_count += 1;
     if side == Side::Short {
+        // Short: We collect premium at entry (money in)
         pnl.total_premium_collected += put_premium + call_premium;
     } else {
-        // For long positions, track separately or use negative
-        pnl.total_premium_collected -= put_premium + call_premium;
+        // Long: We pay premium at entry (money out)
+        pnl.total_premium_paid += put_premium + call_premium;
     }
 
     PositionTracking {

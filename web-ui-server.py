@@ -207,7 +207,7 @@ strike_config:
         
         # Parse output
         trades = self.parse_trades(stdout, strategy)
-        net_pnl, position_count, final_price = self.extract_summary(stdout, trades)
+        net_pnl, position_count, final_price = self.extract_summary(stdout, trades, strategy)
         win_rate = self.calculate_win_rate(trades)
         
         return SimResult(
@@ -296,9 +296,9 @@ strike_config:
         
         return (wins / len(close_trades)) * 100.0
     
-    def extract_summary(self, output, trades=None):
+    def extract_summary(self, output, trades=None, strategy=''):
         """Extract summary statistics from simulation output"""
-        # Calculate P&L from close trades (more accurate than summary for long positions)
+        # Calculate P&L from close trades - this is the correct realized P&L
         net_pnl = 0.0
         if trades:
             for t in trades:
