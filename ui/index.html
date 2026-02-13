@@ -274,7 +274,7 @@
                 <select id="strategyType">
                     <option value="straddle">1DTE Straddle</option>
                     <option value="long_protection">Long Protection (70DTE)</option>
-                    <option value="combined">Combined Strategy</option>
+                    <option value="combined" selected>Combined Strategy</option>
                 </select>
             </div>
             
@@ -339,6 +339,27 @@
                     <div class="stat-card">
                         <div class="stat-label">Final Price</div>
                         <div class="stat-value" id="finalPrice">$0.00</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="panel">
+                <h3>P&L Per Day</h3>
+                <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr);">
+                    <div class="stat-card">
+                        <div class="stat-label">Short Leg</div>
+                        <div class="stat-value positive" id="shortPnlPerDay">+$0</div>
+                        <div class="stat-label" style="font-size: 10px; margin-top: 5px;"><span id="shortPositions">0</span> positions | <span id="shortWinRate">0</span>% WR</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Long Leg</div>
+                        <div class="stat-value negative" id="longPnlPerDay">-$0</div>
+                        <div class="stat-label" style="font-size: 10px; margin-top: 5px;"><span id="longPositions">0</span> positions | <span id="longWinRate">0</span>% WR</div>
+                    </div>
+                    <div class="stat-card" style="background: #1a1a2e; border: 2px solid #e94560;">
+                        <div class="stat-label">Total / Day</div>
+                        <div class="stat-value" id="totalPnlPerDay">$0</div>
+                        <div class="stat-label" style="font-size: 10px; margin-top: 5px;">Net daily return</div>
                     </div>
                 </div>
             </div>
@@ -418,6 +439,29 @@
             document.getElementById('positionCount').textContent = positionCount;
             document.getElementById('winRate').textContent = winRate.toFixed(1) + '%';
             document.getElementById('finalPrice').textContent = '$' + finalPrice.toFixed(2);
+            
+            // Update P&L per day metrics
+            const shortPnlPerDay = result.short_pnl_per_day || 0;
+            const longPnlPerDay = result.long_pnl_per_day || 0;
+            const totalPnlPerDay = result.total_pnl_per_day || 0;
+            
+            document.getElementById('shortPnlPerDay').textContent = 
+                (shortPnlPerDay >= 0 ? '+$' : '-$') + Math.abs(shortPnlPerDay).toFixed(0);
+            document.getElementById('shortPnlPerDay').className = 'stat-value ' + (shortPnlPerDay >= 0 ? 'positive' : 'negative');
+            
+            document.getElementById('longPnlPerDay').textContent = 
+                (longPnlPerDay >= 0 ? '+$' : '-$') + Math.abs(longPnlPerDay).toFixed(0);
+            document.getElementById('longPnlPerDay').className = 'stat-value ' + (longPnlPerDay >= 0 ? 'positive' : 'negative');
+            
+            document.getElementById('totalPnlPerDay').textContent = 
+                (totalPnlPerDay >= 0 ? '+$' : '-$') + Math.abs(totalPnlPerDay).toFixed(0);
+            document.getElementById('totalPnlPerDay').className = 'stat-value ' + (totalPnlPerDay >= 0 ? 'positive' : 'negative');
+            
+            // Update position counts and win rates
+            document.getElementById('shortPositions').textContent = result.short_positions || 0;
+            document.getElementById('longPositions').textContent = result.long_positions || 0;
+            document.getElementById('shortWinRate').textContent = (result.short_win_rate || 0).toFixed(0);
+            document.getElementById('longWinRate').textContent = (result.long_win_rate || 0).toFixed(0);
             
             // Update log
             const log = document.getElementById('tradeLog');

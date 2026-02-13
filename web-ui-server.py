@@ -2,6 +2,7 @@
 """
 Simple HTTP server for Trading Simulator V2
 Uses only Python standard library (no Flask required)
+Supports combined short + long position tracking with separate P&L metrics
 """
 
 import http.server
@@ -11,10 +12,36 @@ import subprocess
 import os
 import re
 from urllib.parse import urlparse
+from dataclasses import dataclass
+from typing import List, Dict, Tuple
 
 PORT = 3000
 SIMULATOR_BIN = "/home/gutastef/trading-simulator-v2/target/debug/trading-simulator-v2"
 UI_DIR = "/home/gutastef/trading-simulator-v2/ui"
+
+@dataclass
+class SimResult:
+    """Results from a single simulation run"""
+    net_pnl: float
+    position_count: int
+    win_rate: float
+    final_price: float
+    trades: List[Dict]
+    days: int
+
+@dataclass
+class CombinedMetrics:
+    """Combined metrics for short + long positions"""
+    short_pnl: float
+    long_pnl: float
+    total_pnl: float
+    short_pnl_per_day: float
+    long_pnl_per_day: float
+    total_pnl_per_day: float
+    short_positions: int
+    long_positions: int
+    short_win_rate: float
+    long_win_rate: float
 
 class SimHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -37,15 +64,74 @@ class SimHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
     
     def run_simulation(self, data):
-        days = data.get('days', 30)
-        initial_price = data.get('initial_price', 75.0)
+        days = data.get('days', 365)
+        initial_price = data.get('initial_price', 62.0)
         volatility = data.get('volatility', 0.30)
         vrp = data.get('vrp', 0.05)
         seed = data.get('seed', 42)
         strategy = data.get('strategy', 'straddle')
         
-        # Generate config based on strategy
-        if strategy == 'long_protection':
+        if strategy == 'combined':
+            # Run both short and long simulations
+            short_result = self.run_single_strategy(
+                days, initial_price, volatility, vrp, seed, 'short'
+            )
+            long_result = self.run_single_strategy(
+                days, initial_price, volatility, vrp, seed, 'long'
+            )
+            
+            # Calculate combined metrics
+            metrics = self.calculate_combined_metrics(short_result, long_result)
+            
+            # Combine trades for display
+            all_trades = self.merge_trades(short_result.trades, long_result.trades)
+            
+            return {
+                'net_pnl': metrics.total_pnl,
+                'position_count': metrics.short_positions + metrics.long_positions,
+                'win_rate': (metrics.short_win_rate + metrics.long_win_rate) / 2,
+                'final_price': short_result.final_price,
+                'trades': all_trades,
+                # New combined metrics
+                'short_pnl': metrics.short_pnl,
+                'long_pnl': metrics.long_pnl,
+                'short_pnl_per_day': metrics.short_pnl_per_day,
+                'long_pnl_per_day': metrics.long_pnl_per_day,
+                'total_pnl_per_day': metrics.total_pnl_per_day,
+                'short_positions': metrics.short_positions,
+                'long_positions': metrics.long_positions,
+                'short_win_rate': metrics.short_win_rate,
+                'long_win_rate': metrics.long_win_rate,
+            }
+        else:
+            # Single strategy (backward compatible)
+            result = self.run_single_strategy(
+                days, initial_price, volatility, vrp, seed, strategy
+            )
+            
+            pnl_per_day = result.net_pnl / result.days if result.days > 0 else 0
+            
+            return {
+                'net_pnl': result.net_pnl,
+                'position_count': result.position_count,
+                'win_rate': result.win_rate,
+                'final_price': result.final_price,
+                'trades': result.trades,
+                'short_pnl': result.net_pnl if strategy != 'long_protection' else 0,
+                'long_pnl': result.net_pnl if strategy == 'long_protection' else 0,
+                'short_pnl_per_day': pnl_per_day if strategy != 'long_protection' else 0,
+                'long_pnl_per_day': pnl_per_day if strategy == 'long_protection' else 0,
+                'total_pnl_per_day': pnl_per_day,
+                'short_positions': result.position_count if strategy != 'long_protection' else 0,
+                'long_positions': result.position_count if strategy == 'long_protection' else 0,
+                'short_win_rate': result.win_rate if strategy != 'long_protection' else 0,
+                'long_win_rate': result.win_rate if strategy == 'long_protection' else 0,
+            }
+    
+    def run_single_strategy(self, days, initial_price, volatility, vrp, seed, strategy):
+        """Run a single strategy simulation"""
+        
+        if strategy == 'long' or strategy == 'long_protection':
             config_yaml = f"""simulation:
   days: {days}
   initial_price: {initial_price:.2f}
@@ -106,7 +192,7 @@ strike_config:
 """
         
         # Write config file
-        config_path = "/tmp/sim_config.yaml"
+        config_path = f"/tmp/sim_config_{strategy}.yaml"
         with open(config_path, 'w') as f:
             f.write(config_yaml)
         
@@ -120,51 +206,104 @@ strike_config:
         stdout = result.stdout
         
         # Parse output
-        trades = self.parse_trades(stdout)
+        trades = self.parse_trades(stdout, strategy)
         net_pnl, position_count, final_price = self.extract_summary(stdout)
+        win_rate = self.calculate_win_rate(trades)
         
-        # Calculate win rate by parsing P&L from close trades
-        # A win is when P&L > 0 (positive return)
-        win_rate = 0.0
-        if position_count > 0:
-            wins = 0
-            for t in trades:
-                if t['trade_type'] == 'close':
-                    # Extract P&L from message like "P&L: $-5197" or "P&L: $1234"
-                    match = re.search(r'P&L:\s*\$(-?[0-9,]+)', t['message'])
-                    if match:
-                        pnl = float(match.group(1).replace(',', ''))
-                        if pnl > 0:
-                            wins += 1
-            win_rate = (wins / position_count) * 100.0
-        
-        return {
-            'net_pnl': net_pnl,
-            'position_count': position_count,
-            'win_rate': win_rate,
-            'final_price': final_price,
-            'trades': trades
-        }
+        return SimResult(
+            net_pnl=net_pnl,
+            position_count=position_count,
+            win_rate=win_rate,
+            final_price=final_price,
+            trades=trades,
+            days=days
+        )
     
-    def parse_trades(self, output):
+    def calculate_combined_metrics(self, short: SimResult, long: SimResult) -> CombinedMetrics:
+        """Calculate combined metrics from short and long results"""
+        
+        total_pnl = short.net_pnl + long.net_pnl
+        days = short.days
+        
+        return CombinedMetrics(
+            short_pnl=short.net_pnl,
+            long_pnl=long.net_pnl,
+            total_pnl=total_pnl,
+            short_pnl_per_day=short.net_pnl / days if days > 0 else 0,
+            long_pnl_per_day=long.net_pnl / days if days > 0 else 0,
+            total_pnl_per_day=total_pnl / days if days > 0 else 0,
+            short_positions=short.position_count,
+            long_positions=long.position_count,
+            short_win_rate=short.win_rate,
+            long_win_rate=long.win_rate,
+        )
+    
+    def merge_trades(self, short_trades: List[Dict], long_trades: List[Dict]) -> List[Dict]:
+        """Merge trades from short and long strategies, sorted by day"""
+        
+        # Add prefix to distinguish trade sources
+        for t in short_trades:
+            t['source'] = 'SHORT'
+        for t in long_trades:
+            t['source'] = 'LONG'
+        
+        # Combine and sort by extracting day number from message
+        all_trades = short_trades + long_trades
+        
+        def extract_day(trade):
+            match = re.search(r'Day\s+(\d+)', trade['message'])
+            return int(match.group(1)) if match else 0
+        
+        all_trades.sort(key=extract_day)
+        return all_trades
+    
+    def parse_trades(self, output, source=''):
+        """Parse trades from simulation output"""
         trades = []
+        prefix = f"[{source}] " if source else ""
+        
         for line in output.split('\n'):
             if 'OPENED position' in line:
-                trades.append({'trade_type': 'open', 'message': line.strip()})
+                trades.append({
+                    'trade_type': 'open',
+                    'message': prefix + line.strip()
+                })
             elif 'CLOSED position' in line:
-                trades.append({'trade_type': 'close', 'message': line.strip()})
+                trades.append({
+                    'trade_type': 'close', 
+                    'message': prefix + line.strip()
+                })
             elif 'Holding pos' in line:
-                trades.append({'trade_type': 'hold', 'message': line.strip()})
+                trades.append({
+                    'trade_type': 'hold',
+                    'message': prefix + line.strip()
+                })
         return trades
     
+    def calculate_win_rate(self, trades):
+        """Calculate win rate from close trades"""
+        close_trades = [t for t in trades if t['trade_type'] == 'close']
+        if not close_trades:
+            return 0.0
+        
+        wins = 0
+        for t in close_trades:
+            match = re.search(r'P&L:\s*\$(-?[0-9,]+)', t['message'])
+            if match:
+                pnl = float(match.group(1).replace(',', ''))
+                if pnl > 0:
+                    wins += 1
+        
+        return (wins / len(close_trades)) * 100.0
+    
     def extract_summary(self, output):
+        """Extract summary statistics from simulation output"""
         net_pnl = 0.0
         position_count = 0
         final_price = 0.0
         
         for line in output.split('\n'):
             if 'Net P&L:' in line:
-                # Match ($-24,604 total) or ($24,604 total) - capture minus sign
                 match = re.search(r'\(\$?(-?[0-9,]+) total\)', line)
                 if match:
                     net_pnl = float(match.group(1).replace(',', ''))

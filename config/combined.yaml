@@ -1,0 +1,47 @@
+# Combined Strategy Configuration
+# Short 1DTE straddle + Long 70 DTE protection
+
+simulation:
+  days: 365                 # Full year simulation
+  initial_price: 62.0       # Current oil price
+  drift: 0.0
+  volatility: 0.30
+  seed: 42
+  risk_free_rate: 0.05
+  contract_multiplier: 1000
+
+# Short leg: 1DTE straddle (collect premium daily)
+short_leg:
+  enabled: true
+  strategy_type: straddle
+  entry_dte: 1
+  entry_time: "15:00"
+  roll_time: "14:00"
+  strike_selection: ATM
+  side: "short"
+  roll_triggers:
+    - trigger_type: time
+      value: 14.0
+      legs: both
+
+# Long leg: 70 DTE protection (pay premium for insurance)
+long_leg:
+  enabled: true
+  strategy_type: straddle
+  entry_dte: 70
+  entry_time: "15:00"
+  roll_time: "14:00"
+  strike_selection: OTM
+  strike_offset: 3.0
+  side: "long"
+  roll_triggers:
+    - trigger_type: dte
+      value: 28.0
+      legs: both
+    - trigger_type: profit_target
+      value: 0.14
+      legs: both
+
+strike_config:
+  tick_size: 0.25
+  roll_type: recenter
