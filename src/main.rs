@@ -1,15 +1,15 @@
-//! Trading Simulator V2 - Intraday Version (10-minute resolution)
+//! Trading Simulator V2 - Intraday Version with JSON Output
 //!
 //! Supports:
 //! - 10-minute granularity (matching V1)
 //! - 23/5 trading calendar (/CL futures)
 //! - Intraday roll triggers (profit targets, DTE, time-based)
 //! - Fractional DTE calculation
-//! - Event sourcing with precise timestamps
+//! - JSON output for web UI integration
 //!
 //! Usage:
-//!   cargo run -- config/straddle_1dte.yaml
-//!   cargo run -- config/long_protection.yaml
+//!   cargo run --bin trading-simulator-v2 -- config/straddle_1dte.yaml
+//!   cargo run --bin trading-simulator-v2 -- --json  (for JSON output mode)
 
 mod calendar;
 mod config;
@@ -23,14 +23,67 @@ use config::Config;
 use events::{CloseReason, Event, EventStore, LegId, OptionContract, OptionType, PositionId, Side};
 use prices::{GBM, PricePoint};
 use pricing::{Black76, Greeks};
+use serde::{Deserialize, Serialize};
 use std::env;
 
-/// Parse time string "HH:MM" to minutes from midnight
-fn parse_time(time_str: &str) -> u32 {
-    let parts: Vec<&str> = time_str.split(':').collect();
-    let hours: u32 = parts[0].parse().unwrap_or(14);
-    let minutes: u32 = parts[1].parse().unwrap_or(0);
-    hours * 60 + minutes
+/// JSON output structure for web UI
+#[derive(Serialize, Deserialize, Debug)]
+struct SimulationOutput {
+    /// Configuration used
+    config: SimulationConfig,
+    /// Raw 10-minute price points
+    price_points: Vec<PricePointJson>,
+    /// Aggregated daily OHLC data
+    daily_ohlc: Vec<DailyOHLC>,
+    /// Trade events
+    trades: Vec<TradeEvent>,
+    /// Summary statistics
+    summary: Summary,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct SimulationConfig {
+    days: usize,
+    resolution_minutes: u32,
+    initial_price: f64,
+    volatility: f64,
+    vrp: f64,
+    seed: u64,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct PricePointJson {
+    day: u32,
+    minute: u32,
+    price: f64,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct DailyOHLC {
+    day: u32,
+    open: f64,
+    high: f64,
+    low: f64,
+    close: f64,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct TradeEvent {
+    trade_type: String,
+    day: u32,
+    minute: u32,
+    price: f64,
+    message: String,
+    pnl: Option<f64>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Summary {
+    total_positions: u32,
+    total_premium_collected: f64,
+    total_premium_paid: f64,
+    net_pnl: f64,
+    final_price: f64,
 }
 
 /// Position tracking with P&L (intraday version)
@@ -57,42 +110,55 @@ struct PnLSummary {
 }
 
 fn main() {
-    println!("Trading Simulator V2 - Intraday Version (10-minute resolution)\n");
+    let args: Vec<String> = env::args().collect();
+    let json_mode = args.contains(&"--json".to_string());
+    
+    if !json_mode {
+        println!("Trading Simulator V2 - Intraday Version (10-minute resolution)\n");
+    }
 
-    // Load configuration from file or use default
+    // Load configuration
     let config = match env::args().nth(1) {
-        Some(path) => {
-            println!("Loading configuration from: {}", path);
+        Some(path) if !path.starts_with("--") => {
+            if !json_mode {
+                println!("Loading configuration from: {}", path);
+            }
             match Config::from_file(&path) {
                 Ok(cfg) => {
-                    println!("✓ Configuration loaded successfully\n");
+                    if !json_mode {
+                        println!("✓ Configuration loaded successfully\n");
+                    }
                     cfg
                 }
                 Err(e) => {
-                    eprintln!("✗ Failed to load config: {}", e);
-                    eprintln!("Using default 1DTE straddle configuration\n");
+                    if !json_mode {
+                        eprintln!("✗ Failed to load config: {}", e);
+                        eprintln!("Using default 1DTE straddle configuration\n");
+                    }
                     Config::default_1dte_straddle()
                 }
             }
         }
-        None => {
-            println!("Usage: cargo run -- <config.yaml>");
-            println!("Using default 1DTE straddle configuration\n");
+        _ => {
+            if !json_mode {
+                println!("Usage: cargo run --bin trading-simulator-v2 -- <config.yaml>");
+                println!("Using default 1DTE straddle configuration\n");
+            }
             Config::default_1dte_straddle()
         }
     };
 
-    // Parse times from config
+    // Parse times
     let entry_time = parse_time(&config.strategy.entry_time);
     let roll_time = parse_time(&config.strategy.roll_time);
 
-    // Setup trading calendar and price generator
+    // Setup
     let calendar = TradingCalendar::new();
     let mut event_store = EventStore::new();
 
-    // Generate intraday price path
-    let start_day = 0; // Day 0 = Monday
-    let start_minute = 9 * 60; // 9:00 AM
+    // Generate price path
+    let start_day = 0;
+    let start_minute = 9 * 60;
     
     let mut gbm = GBM::new(
         config.simulation.initial_price,
@@ -102,7 +168,7 @@ fn main() {
     );
     
     let resolution = config.simulation.intraday_resolution_minutes;
-    let price_bars = gbm.generate_intraday_path(
+    let price_points = gbm.generate_intraday_path(
         &calendar,
         config.simulation.days,
         resolution,
@@ -110,66 +176,49 @@ fn main() {
         start_minute,
     );
 
-    // Calculate implied volatility for option pricing
+    // Aggregate to daily OHLC
+    let daily_ohlc = aggregate_to_daily_ohlc(&price_points);
+
+    // Calculate implied vol
     let realized_vol = config.simulation.volatility;
     let implied_vol = realized_vol + config.simulation.volatility_risk_premium;
-    
-    // Print configuration
-    println!("Simulation Parameters:");
-    println!("  Days: {}", config.simulation.days);
-    println!("  Resolution: {} minutes", config.simulation.intraday_resolution_minutes);
-    println!("  Total bars: {}", price_bars.len());
-    println!("  Initial price: ${:.2}", config.simulation.initial_price);
-    println!("  Drift (μ): {:.2}%", config.simulation.drift * 100.0);
-    println!("  Realized volatility: {:.0}%", realized_vol * 100.0);
-    println!("  Volatility Risk Premium: {:.1}%", config.simulation.volatility_risk_premium * 100.0);
-    println!("  Implied volatility: {:.0}% (for option pricing)", implied_vol * 100.0);
-    println!("  Risk-free rate: {:.1}%", config.simulation.risk_free_rate * 100.0);
-    println!("  Seed: {}", config.simulation.seed);
-    println!();
-    println!("Strategy: {} ({} DTE)", config.strategy.strategy_type, config.strategy.entry_dte);
-    println!("  Side: {} ({})", 
-        config.strategy.side,
-        if config.strategy.side == "long" { "pay premium" } else { "collect premium" }
-    );
-    println!("  Entry time: {}", config.strategy.entry_time);
-    println!("  Roll time: {}", config.strategy.roll_time);
-    println!("  Strike selection: {}", config.strategy.strike_selection);
-    println!("  Strike tick size: ${:.2}", config.strike_config.tick_size);
-    println!("  Roll type: {}", config.strike_config.roll_type);
-    if config.strategy.strike_offset > 0.0 {
-        println!("  Strike offset: {} points", config.strategy.strike_offset);
-    }
-    println!();
 
-    // Track active position
+    // Print config (text mode)
+    if !json_mode {
+        println!("Simulation Parameters:");
+        println!("  Days: {}", config.simulation.days);
+        println!("  Resolution: {} minutes", config.simulation.intraday_resolution_minutes);
+        println!("  Total points: {}", price_points.len());
+        println!("  Initial price: ${:.2}", config.simulation.initial_price);
+        println!("  Volatility: {:.0}%", realized_vol * 100.0);
+        println!("  VRP: {:.1}%", config.simulation.volatility_risk_premium * 100.0);
+        println!("  Seed: {}", config.simulation.seed);
+        println!();
+    }
+
+    // Run simulation
     let mut active_position: Option<PositionTracking> = None;
     let mut pnl_summary = PnLSummary::default();
+    let mut trades: Vec<TradeEvent> = Vec::new();
 
-    // Run simulation bar by bar
-    for price_point in &price_bars {
+    for price_point in &price_points {
         let current_price = price_point.price;
         let timestamp = price_point.timestamp;
         let date_str = format_timestamp(&timestamp);
 
         // Check for roll triggers
         if let Some(pos) = active_position.take() {
-            // Calculate fractional DTE
             let fractional_dte = calculate_fractional_dte(&timestamp, pos.expiration_day);
             
-            // Check if we should roll (DTE threshold or time-based)
             let should_roll = if config.strategy.entry_dte == 1 {
-                // For 1DTE: roll at roll_time on expiration day
                 timestamp.day == pos.expiration_day && timestamp.minute >= roll_time
             } else {
-                // For longer DTE: roll when DTE <= 28
                 fractional_dte <= 28.0
             };
             
             if should_roll {
-                // Close current position
+                // Close position
                 let (put_close, call_close) = if fractional_dte > 0.0 {
-                    // Early close: use Black76 to include time value
                     let time_to_expiry = fractional_dte / 252.0;
                     let put = Black76::price(
                         current_price, pos.put_strike, time_to_expiry,
@@ -181,24 +230,19 @@ fn main() {
                     );
                     (put, call)
                 } else {
-                    // Expiration: use intrinsic value only
                     let put = calculate_intrinsic(current_price, pos.put_strike, false);
                     let call = calculate_intrinsic(current_price, pos.call_strike, true);
                     (put, call)
                 };
                 
-                // Calculate P&L based on position side
                 let is_long = config.strategy.side == "long";
                 let position_pnl = if is_long {
-                    // Long: Close Value - Entry Premium
                     (put_close + call_close) - (pos.put_entry_premium + pos.call_entry_premium)
                 } else {
-                    // Short: Entry Premium - Close Value
                     (pos.put_entry_premium + pos.call_entry_premium) - (put_close + call_close)
                 };
                 let position_pnl_dollars = position_pnl * config.simulation.contract_multiplier;
                 
-                // Track close value
                 if is_long {
                     pnl_summary.total_premium_collected += put_close + call_close;
                 } else {
@@ -206,132 +250,168 @@ fn main() {
                 }
                 
                 let reason_str = if fractional_dte <= 0.0 { "Expiration" } else { "Roll" };
-                print!("{} | Price ${:.2} | ", date_str, current_price);
-                println!(
-                    "CLOSED position {} at {} | P&L: ${:.0} ({})",
-                    pos.position_id.0,
-                    &config.strategy.roll_time,
-                    position_pnl_dollars,
-                    reason_str
-                );
+                let msg = format!("CLOSED position {} at {} | P&L: ${:.0} ({})",
+                    pos.position_id.0, &config.strategy.roll_time, position_pnl_dollars, reason_str);
                 
-                let close_event = Event::PositionClosed {
-                    position_id: pos.position_id,
-                    timestamp: (timestamp.day, timestamp.minute as u16),
-                    close_premiums: vec![
-                        (LegId(pos.position_id.0 * 2 - 1), put_close),
-                        (LegId(pos.position_id.0 * 2), call_close),
-                    ],
-                    reason: CloseReason::Expiration,
-                };
-                event_store.append(close_event);
+                if !json_mode {
+                    print!("{} | Price ${:.2} | ", date_str, current_price);
+                    println!("{}", msg);
+                }
                 
-                // Open new position at roll time
+                trades.push(TradeEvent {
+                    trade_type: "close".to_string(),
+                    day: timestamp.day,
+                    minute: timestamp.minute,
+                    price: current_price,
+                    message: msg,
+                    pnl: Some(position_pnl_dollars),
+                });
+                
+                // Open new position
                 let use_same_strikes = config.strike_config.roll_type == "same_strikes";
                 let new_pos = open_position_with_pricing(
-                    &calendar,
-                    &mut event_store,
-                    &mut pnl_summary,
-                    &config,
-                    timestamp.day,
-                    roll_time,
-                    current_price,
-                    if use_same_strikes {
-                        Some((pos.put_strike, pos.call_strike))
-                    } else {
-                        None
-                    },
+                    &calendar, &mut event_store, &mut pnl_summary, &config,
+                    timestamp.day, roll_time, current_price,
+                    if use_same_strikes { Some((pos.put_strike, pos.call_strike)) } else { None },
                     implied_vol,
                 );
+                
                 let new_total = new_pos.put_entry_premium + new_pos.call_entry_premium;
                 let new_total_dollars = new_total * config.simulation.contract_multiplier;
-                let new_display_premium = if is_long { -new_total } else { new_total };
-                let new_display_premium_dollars = if is_long { -new_total_dollars } else { new_total_dollars };
-                let roll_type_str = if use_same_strikes { " (same strikes)" } else { "" };
-                println!(
-                    "  -> OPENED position {} at {} | Strikes: Put ${:.2} Call ${:.2} | ${:.2} per barrel (${:.0} total){}",
-                    new_pos.position_id.0,
-                    &config.strategy.roll_time,
-                    new_pos.put_strike,
-                    new_pos.call_strike,
-                    new_display_premium,
-                    new_display_premium_dollars,
-                    roll_type_str
-                );
-                print_greeks(&new_pos);
+                let new_display = if is_long { -new_total } else { new_total };
+                let new_display_dollars = if is_long { -new_total_dollars } else { new_total_dollars };
+                
+                let msg2 = format!("OPENED position {} at {} | Strikes: P${:.2} C${:.2} | ${:.2} (${:.0})",
+                    new_pos.position_id.0, &config.strategy.roll_time,
+                    new_pos.put_strike, new_pos.call_strike, new_display, new_display_dollars);
+                
+                if !json_mode {
+                    println!("  -> {}", msg2);
+                    print_greeks(&new_pos);
+                }
+                
+                trades.push(TradeEvent {
+                    trade_type: "open".to_string(),
+                    day: timestamp.day,
+                    minute: timestamp.minute,
+                    price: current_price,
+                    message: msg2,
+                    pnl: None,
+                });
                 
                 active_position = Some(new_pos);
                 continue;
             } else {
-                // No roll triggered, keep position
                 active_position = Some(pos);
             }
         }
 
-        // Open new position at entry time if none exists
+        // Open new position
         if active_position.is_none() && timestamp.minute >= entry_time {
             let pos = open_position_with_pricing(
-                &calendar,
-                &mut event_store,
-                &mut pnl_summary,
-                &config,
-                timestamp.day,
-                entry_time,
-                current_price,
-                None,
-                implied_vol,
+                &calendar, &mut event_store, &mut pnl_summary, &config,
+                timestamp.day, entry_time, current_price, None, implied_vol,
             );
 
             let is_long = config.strategy.side == "long";
             let total_premium = pos.put_entry_premium + pos.call_entry_premium;
-            let total_premium_dollars = total_premium * config.simulation.contract_multiplier;
-            let display_premium = if is_long { -total_premium } else { total_premium };
-            let display_premium_dollars = if is_long { -total_premium_dollars } else { total_premium_dollars };
+            let total_dollars = total_premium * config.simulation.contract_multiplier;
+            let display = if is_long { -total_premium } else { total_premium };
+            let display_dollars = if is_long { -total_dollars } else { total_dollars };
             
-            print!("{} | Price ${:.2} | ", date_str, current_price);
-            println!(
-                "OPENED position {} at {} | Strikes: Put ${:.2} Call ${:.2} | ${:.2} per barrel (${:.0} total)",
-                pos.position_id.0,
-                &config.strategy.entry_time,
-                pos.put_strike,
-                pos.call_strike,
-                display_premium,
-                display_premium_dollars
-            );
-            print_greeks(&pos);
+            let msg = format!("OPENED position {} at {} | Strikes: P${:.2} C${:.2} | ${:.2} (${:.0})",
+                pos.position_id.0, &config.strategy.entry_time,
+                pos.put_strike, pos.call_strike, display, display_dollars);
+            
+            if !json_mode {
+                print!("{} | Price ${:.2} | ", date_str, current_price);
+                println!("{}", msg);
+                print_greeks(&pos);
+            }
+            
+            trades.push(TradeEvent {
+                trade_type: "open".to_string(),
+                day: timestamp.day,
+                minute: timestamp.minute,
+                price: current_price,
+                message: msg,
+                pnl: None,
+            });
 
             active_position = Some(pos);
         }
     }
 
-    // Final summary
-    println!("\n{}", "=".repeat(60));
-    println!("SIMULATION SUMMARY");
-    println!("{}", "=".repeat(60));
-    println!("Total positions opened: {}", pnl_summary.position_count);
-    println!(
-        "Total premium collected: ${:.2} per barrel (${:.0} total)",
-        pnl_summary.total_premium_collected,
-        pnl_summary.total_premium_collected * config.simulation.contract_multiplier
-    );
-    println!(
-        "Total premium paid: ${:.2} per barrel (${:.0} total)",
-        pnl_summary.total_premium_paid,
-        pnl_summary.total_premium_paid * config.simulation.contract_multiplier
-    );
+    // Build output
     let net_pnl = pnl_summary.total_premium_collected - pnl_summary.total_premium_paid;
-    println!(
-        "Net P&L: ${:.2} per barrel (${:.0} total)",
-        net_pnl,
-        net_pnl * config.simulation.contract_multiplier
-    );
-    println!(
-        "Contract multiplier: {} barrels",
-        config.simulation.contract_multiplier as u32
-    );
-    if let Some(last_point) = price_bars.last() {
-        println!("Final underlying price: ${:.2}", last_point.price);
+    let final_price = price_points.last().map(|p| p.price).unwrap_or(config.simulation.initial_price);
+    
+    let output = SimulationOutput {
+        config: SimulationConfig {
+            days: config.simulation.days,
+            resolution_minutes: config.simulation.intraday_resolution_minutes,
+            initial_price: config.simulation.initial_price,
+            volatility: realized_vol,
+            vrp: config.simulation.volatility_risk_premium,
+            seed: config.simulation.seed,
+        },
+        price_points: price_points.iter().map(|p| PricePointJson {
+            day: p.timestamp.day,
+            minute: p.timestamp.minute,
+            price: p.price,
+        }).collect(),
+        daily_ohlc,
+        trades,
+        summary: Summary {
+            total_positions: pnl_summary.position_count,
+            total_premium_collected: pnl_summary.total_premium_collected,
+            total_premium_paid: pnl_summary.total_premium_paid,
+            net_pnl,
+            final_price,
+        },
+    };
+
+    // Output
+    if json_mode {
+        println!("{}", serde_json::to_string_pretty(&output).unwrap());
+    } else {
+        println!("\n{}", "=".repeat(60));
+        println!("SIMULATION SUMMARY");
+        println!("{}", "=".repeat(60));
+        println!("Total positions opened: {}", pnl_summary.position_count);
+        println!("Total premium collected: ${:.2} per barrel", pnl_summary.total_premium_collected);
+        println!("Total premium paid: ${:.2} per barrel", pnl_summary.total_premium_paid);
+        println!("Net P&L: ${:.2} per barrel", net_pnl);
+        println!("Net P&L: ${:.0} total", net_pnl * config.simulation.contract_multiplier);
+        println!("Final price: ${:.2}", final_price);
     }
+}
+
+/// Aggregate 10-min price points to daily OHLC
+fn aggregate_to_daily_ohlc(price_points: &[PricePoint]) -> Vec<DailyOHLC> {
+    use std::collections::HashMap;
+    
+    let mut daily_data: HashMap<u32, (f64, f64, f64, f64)> = HashMap::new();
+    
+    for point in price_points {
+        let day = point.timestamp.day;
+        let price = point.price;
+        
+        daily_data.entry(day)
+            .and_modify(|(o, h, l, c)| {
+                *h = h.max(price);
+                *l = l.min(price);
+                *c = price;
+            })
+            .or_insert((price, price, price, price));
+    }
+    
+    let mut result: Vec<DailyOHLC> = daily_data.iter()
+        .map(|(&day, &(open, high, low, close))| DailyOHLC { day, open, high, low, close })
+        .collect();
+    
+    result.sort_by_key(|d| d.day);
+    result
 }
 
 /// Calculate fractional days to expiration
@@ -339,13 +419,20 @@ fn calculate_fractional_dte(current: &Timestamp, expiration_day: u32) -> f64 {
     if current.day >= expiration_day {
         return 0.0;
     }
-    // Approximate: each day is 1.0, each minute is 1/138 (for 23-hour trading day at 10-min bars)
     let days_remaining = (expiration_day - current.day) as f64;
     let minutes_fraction = (138.0 - current.minute as f64) / 138.0;
     days_remaining - 1.0 + minutes_fraction
 }
 
-/// Format timestamp as human-readable string
+/// Parse time string
+fn parse_time(time_str: &str) -> u32 {
+    let parts: Vec<&str> = time_str.split(':').collect();
+    let hours: u32 = parts[0].parse().unwrap_or(14);
+    let minutes: u32 = parts[1].parse().unwrap_or(0);
+    hours * 60 + minutes
+}
+
+/// Format timestamp
 fn format_timestamp(ts: &Timestamp) -> String {
     let hours = ts.minute / 60;
     let mins = ts.minute % 60;
@@ -357,7 +444,7 @@ fn format_timestamp(ts: &Timestamp) -> String {
     format!("Day {} ({} W{}) {:02}:{:02}", ts.day, weekday, week, hours, mins)
 }
 
-/// Calculate intrinsic value at expiration
+/// Calculate intrinsic value
 fn calculate_intrinsic(underlying: f64, strike: f64, is_call: bool) -> f64 {
     if is_call {
         (underlying - strike).max(0.0)
@@ -366,9 +453,9 @@ fn calculate_intrinsic(underlying: f64, strike: f64, is_call: bool) -> f64 {
     }
 }
 
-/// Open a position with Black-76 pricing
+/// Open position
 fn open_position_with_pricing(
-    calendar: &TradingCalendar,
+    _calendar: &TradingCalendar,
     event_store: &mut EventStore,
     pnl: &mut PnLSummary,
     config: &Config,
@@ -378,10 +465,9 @@ fn open_position_with_pricing(
     strike_override: Option<(f64, f64)>,
     implied_vol: f64,
 ) -> PositionTracking {
-    // Calculate expiration day based on entry_dte config
+    let calendar_old = calendar::Calendar::new();
     let mut expiration_day = entry_day;
     let mut trading_days_count = 0;
-    let calendar_old = calendar::Calendar::new();
     while trading_days_count < config.strategy.entry_dte {
         expiration_day = calendar_old.next_trading_day(expiration_day);
         trading_days_count += 1;
@@ -392,7 +478,6 @@ fn open_position_with_pricing(
     let put_leg_id = event_store.next_leg_id();
     let call_leg_id = event_store.next_leg_id();
 
-    // Determine strikes
     let (put_strike, call_strike) = if let Some((put, call)) = strike_override {
         (put, call)
     } else {
@@ -411,7 +496,6 @@ fn open_position_with_pricing(
         }
     };
 
-    // Price using Black-76 with IMPLIED volatility
     let put_premium = Black76::price(
         current_price, put_strike, time_to_expiry,
         config.simulation.risk_free_rate, implied_vol, false
@@ -421,7 +505,6 @@ fn open_position_with_pricing(
         config.simulation.risk_free_rate, implied_vol, true
     );
 
-    // Calculate Greeks
     let put_greeks = Black76::greeks(
         current_price, put_strike, time_to_expiry,
         config.simulation.risk_free_rate, implied_vol, false
@@ -431,7 +514,6 @@ fn open_position_with_pricing(
         config.simulation.risk_free_rate, implied_vol, true
     );
 
-    // Determine side
     let side = if config.strategy.side == "long" { Side::Long } else { Side::Short };
     
     let put_contract = OptionContract {
@@ -484,7 +566,7 @@ fn open_position_with_pricing(
     }
 }
 
-/// Print Greeks for a position
+/// Print Greeks
 fn print_greeks(pos: &PositionTracking) {
     let total_delta = pos.put_greeks.delta + pos.call_greeks.delta;
     let total_gamma = pos.put_greeks.gamma + pos.call_greeks.gamma;
