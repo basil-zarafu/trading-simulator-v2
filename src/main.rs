@@ -43,7 +43,11 @@ struct SimulationOutput {
 
 #[derive(Serialize, Deserialize, Debug)]
 struct SimulationConfig {
+    /// Calendar days requested (not trading days)
     days: usize,
+    /// Trading days actually simulated (approximate)
+    #[serde(rename = "trading_days")]
+    trading_days: usize,
     resolution_minutes: u32,
     initial_price: f64,
     volatility: f64,
@@ -157,6 +161,12 @@ fn main() {
     let mut event_store = EventStore::new();
 
     // Generate price path
+    // Note: config.days is CALENDAR days (not trading days)
+    // We need to estimate trading days from calendar days for point generation
+    let calendar_days = config.simulation.days;
+    // Approximate: 5 trading days per 7 calendar days
+    let estimated_trading_days = (calendar_days as f64 * 5.0 / 7.0).ceil() as usize;
+    
     let start_day = 0;
     let start_minute = 9 * 60;
     
@@ -170,11 +180,17 @@ fn main() {
     let resolution = config.simulation.intraday_resolution_minutes;
     let price_points = gbm.generate_intraday_path(
         &calendar,
-        config.simulation.days,
+        estimated_trading_days,
         resolution,
         start_day,
         start_minute,
     );
+    
+    // Filter points to only include up to requested calendar days
+    let max_day = calendar_days as u32;
+    let price_points: Vec<_> = price_points.into_iter()
+        .filter(|p| p.timestamp.day < max_day)
+        .collect();
 
     // Aggregate to daily OHLC
     let daily_ohlc = aggregate_to_daily_ohlc(&price_points);
@@ -349,6 +365,7 @@ fn main() {
     let output = SimulationOutput {
         config: SimulationConfig {
             days: config.simulation.days,
+            trading_days: estimated_trading_days,
             resolution_minutes: config.simulation.intraday_resolution_minutes,
             initial_price: config.simulation.initial_price,
             volatility: realized_vol,
