@@ -250,8 +250,8 @@ fn main() {
                 }
                 
                 let reason_str = if fractional_dte <= 0.0 { "Expiration" } else { "Roll" };
-                let msg = format!("CLOSED position {} at {} | P&L: ${:.0} ({})",
-                    pos.position_id.0, &config.strategy.roll_time, position_pnl_dollars, reason_str);
+                let msg = format!("Day {} | CLOSED position {} at {} | P&L: ${:.0} ({})",
+                    timestamp.day, pos.position_id.0, &config.strategy.roll_time, position_pnl_dollars, reason_str);
                 
                 if !json_mode {
                     print!("{} | Price ${:.2} | ", date_str, current_price);
@@ -281,8 +281,8 @@ fn main() {
                 let new_display = if is_long { -new_total } else { new_total };
                 let new_display_dollars = if is_long { -new_total_dollars } else { new_total_dollars };
                 
-                let msg2 = format!("OPENED position {} at {} | Strikes: P${:.2} C${:.2} | ${:.2} (${:.0})",
-                    new_pos.position_id.0, &config.strategy.roll_time,
+                let msg2 = format!("Day {} | OPENED position {} at {} | Strikes: P${:.2} C${:.2} | ${:.2} (${:.0})",
+                    timestamp.day, new_pos.position_id.0, &config.strategy.roll_time,
                     new_pos.put_strike, new_pos.call_strike, new_display, new_display_dollars);
                 
                 if !json_mode {
@@ -319,8 +319,8 @@ fn main() {
             let display = if is_long { -total_premium } else { total_premium };
             let display_dollars = if is_long { -total_dollars } else { total_dollars };
             
-            let msg = format!("OPENED position {} at {} | Strikes: P${:.2} C${:.2} | ${:.2} (${:.0})",
-                pos.position_id.0, &config.strategy.entry_time,
+            let msg = format!("Day {} | OPENED position {} at {} | Strikes: P${:.2} C${:.2} | ${:.2} (${:.0})",
+                timestamp.day, pos.position_id.0, &config.strategy.entry_time,
                 pos.put_strike, pos.call_strike, display, display_dollars);
             
             if !json_mode {
