@@ -8,6 +8,8 @@
 //! - Expiration: 14:30 on trading days
 //! - Roll trigger: 14:00 on trading days
 
+pub mod intraday;
+
 use std::collections::HashSet;
 
 /// Trading day (0-indexed from Jan 1, Year 0)

@@ -52,6 +52,12 @@ pub struct SimulationConfig {
     /// Contract multiplier (1000 for /CL, 100 for stocks)
     #[serde(default = "default_contract_multiplier")]
     pub contract_multiplier: f64,
+    /// Intraday resolution in minutes (0 = daily mode, 10 = 10-minute bars)
+    #[serde(default = "default_intraday_resolution")]
+    pub intraday_resolution_minutes: u32,
+    /// Trading calendar type: "standard" (Mon-Fri 9-5) or "cl_futures" (23/5)
+    #[serde(default = "default_calendar_type")]
+    pub calendar_type: String,
 }
 
 /// Strategy configuration
@@ -182,6 +188,8 @@ impl Config {
                 seed: 42,
                 risk_free_rate: 0.05,
                 contract_multiplier: 1000.0,
+                intraday_resolution_minutes: 10, // 10-minute bars
+                calendar_type: "cl_futures".to_string(), // 23/5 calendar
             },
             strategy: StrategyConfig {
                 enabled: true,
@@ -340,6 +348,14 @@ fn default_strike_tick_size() -> f64 {
 
 fn default_roll_type() -> String {
     "recenter".to_string()
+}
+
+fn default_intraday_resolution() -> u32 {
+    10 // Default to 10-minute bars for intraday simulation
+}
+
+fn default_calendar_type() -> String {
+    "cl_futures".to_string() // Default to /CL 23/5 calendar
 }
 
 #[cfg(test)]

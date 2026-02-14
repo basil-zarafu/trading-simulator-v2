@@ -1,9 +1,20 @@
 //! Price Generation Models
 //!
 //! Geometric Brownian Motion for simulating underlying price paths.
+//! Supports both daily and intraday (10-minute) resolution.
 
+use crate::calendar::intraday::{TradingCalendar, Timestamp};
 use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
+
+/// Price point at a specific timestamp
+#[derive(Debug, Clone, Copy)]
+pub struct PricePoint {
+    /// Timestamp (day and minute)
+    pub timestamp: Timestamp,
+    /// Price at this timestamp
+    pub price: f64,
+}
 
 /// Geometric Brownian Motion price generator
 #[derive(Debug, Clone)]
@@ -35,7 +46,7 @@ impl GBM {
         }
     }
 
-    /// Generate a price path for N trading days
+    /// Generate a price path for N trading days (legacy daily mode)
     ///
     /// Returns a Vec of (day, price) tuples
     pub fn generate_path(&mut self, num_days: usize) -> Vec<(u32, f64)> {
@@ -47,8 +58,6 @@ impl GBM {
             prices.push((day as u32, current_price));
             
             // GBM formula: dS = μS dt + σS dW
-            // Discretized: S(t+dt) = S(t) * exp((μ - 0.5σ²)dt + σ√dt * Z)
-            // Z ~ N(0,1) standard normal (can be negative!)
             let z: f64 = self.rng.sample(rand_distr::StandardNormal);
             let brownian_motion = z * dt.sqrt();
             
@@ -59,6 +68,58 @@ impl GBM {
         }
 
         prices
+    }
+
+    /// Generate intraday price path with single price points
+    ///
+    /// # Arguments
+    /// * `calendar` - Trading calendar for valid trading times
+    /// * `num_days` - Number of trading days to simulate
+    /// * `interval_minutes` - Interval between price points (typically 10 for /CL)
+    /// * `start_day` - Starting day number
+    /// * `start_minute` - Starting minute of day
+    ///
+    /// # Returns
+    /// Vector of PricePoint for each interval
+    pub fn generate_intraday_path(
+        &mut self,
+        calendar: &TradingCalendar,
+        num_days: usize,
+        interval_minutes: u32,
+        start_day: u32,
+        start_minute: u32,
+    ) -> Vec<PricePoint> {
+        // Calculate total number of points needed
+        // For 23/5 trading: ~138 points per day at 10-min intervals
+        let points_per_day = (23 * 60) as usize / interval_minutes as usize;
+        let total_points = num_days * points_per_day;
+        
+        // Generate trading timestamps
+        let timestamps = calendar.generate_trading_times(start_day, start_minute, total_points, interval_minutes);
+        
+        // Calculate dt per interval in years
+        let dt_years = interval_minutes as f64 / (365.25 * 24.0 * 60.0);
+        
+        let mut points = Vec::with_capacity(timestamps.len());
+        let mut current_price = self.initial_price;
+        
+        for timestamp in timestamps {
+            // Generate next price using GBM
+            let z: f64 = self.rng.sample(rand_distr::StandardNormal);
+            let brownian_motion = z * dt_years.sqrt();
+            
+            let drift_term = (self.drift - 0.5 * self.volatility.powi(2)) * dt_years;
+            let diffusion_term = self.volatility * brownian_motion;
+            
+            current_price *= (drift_term + diffusion_term).exp();
+            
+            points.push(PricePoint {
+                timestamp,
+                price: current_price,
+            });
+        }
+        
+        points
     }
 
     /// Generate a single next price given current price
