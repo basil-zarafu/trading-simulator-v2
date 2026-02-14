@@ -255,6 +255,11 @@
                     }
                 };
                 
+                // Calculate price range for Y-axis (add some padding)
+                const allPrices = ohlc.flatMap(d => [d.open, d.high, d.low, d.close]);
+                const minPrice = Math.min(...allPrices) * 0.995;
+                const maxPrice = Math.max(...allPrices) * 1.005;
+                
                 priceChart = new Chart(ctx, {
                     type: 'bar',
                     data: {
@@ -269,7 +274,12 @@
                         plugins: { legend: { display: false } },
                         scales: {
                             x: { ticks: { color: '#888', maxTicksLimit: 10 }, grid: { color: '#0f3460' } },
-                            y: { ticks: { color: '#888', callback: v => '$' + v.toFixed(1) }, grid: { color: '#0f3460' } }
+                            y: { 
+                                min: minPrice,
+                                max: maxPrice,
+                                ticks: { color: '#888', callback: v => '$' + v.toFixed(2) }, 
+                                grid: { color: '#0f3460' } 
+                            }
                         }
                     },
                     plugins: [candlePlugin]
@@ -310,17 +320,24 @@
             const trades = data.trades || [];
             const closeTrades = trades.filter(t => t.trade_type === 'close');
             
-            if (closeTrades.length === 0) return;
+            if (closeTrades.length === 0) {
+                console.log('No close trades found for P&L chart');
+                return;
+            }
             
             let cumulative = 0;
             const labels = [];
             const values = [];
             
-            closeTrades.forEach(t => {
-                cumulative += t.pnl || 0;
+            closeTrades.forEach((t, i) => {
+                const pnl = t.pnl || 0;
+                cumulative += pnl;
                 labels.push('D' + t.day);
                 values.push(cumulative);
+                console.log(`Trade ${i}: day=${t.day}, pnl=${pnl}, cumulative=${cumulative}`);
             });
+            
+            console.log('P&L Chart Data:', { labels, values, closeTradesCount: closeTrades.length });
             
             pnlChart = new Chart(document.getElementById('pnlChart'), {
                 type: 'line',

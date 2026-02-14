@@ -148,12 +148,16 @@ strike_config:
         wins = sum(1 for t in close_trades if t.get('pnl', 0) > 0)
         win_rate = (wins / len(close_trades) * 100) if close_trades else 0
         
-        # Transform trades for UI
+        # Transform trades for UI (preserve all fields needed for charts)
         ui_trades = []
         for trade in trades:
             ui_trades.append({
                 'trade_type': trade.get('trade_type', ''),
-                'message': trade.get('message', '')
+                'message': trade.get('message', ''),
+                'day': trade.get('day', 0),
+                'minute': trade.get('minute', 0),
+                'price': trade.get('price', 0),
+                'pnl': trade.get('pnl')  # May be null for open trades
             })
         
         # Calculate P&L per day
