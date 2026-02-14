@@ -281,11 +281,14 @@
                                 </select>
                             </div>
                             <div class="control-group">
-                                <label>Resync Spread (points)</label>
-                                <select id="longResyncSpread">
-                                    <option value="1.0">1.0</option>
-                                    <option value="1.5" selected>1.5</option>
-                                    <option value="2.0">2.0</option>
+                                <label>Price Move Trigger (points)</label>
+                                <select id="longPriceMove">
+                                    <option value="0">None</option>
+                                    <option value="2">2 points</option>
+                                    <option value="3" selected>3 points</option>
+                                    <option value="4">4 points</option>
+                                    <option value="5">5 points</option>
+                                    <option value="6">6 points</option>
                                 </select>
                             </div>
                         </div>
@@ -466,7 +469,7 @@
                     new_dte: parseInt(document.getElementById('longNewDte').value),
                     triggers: {
                         profit_target: parseInt(document.getElementById('longProfitTarget').value) || null,
-                        resync_spread: parseFloat(document.getElementById('longResyncSpread').value)
+                        price_move: parseFloat(document.getElementById('longPriceMove').value) || null
                     }
                 });
             }
