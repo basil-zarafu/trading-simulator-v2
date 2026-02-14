@@ -64,23 +64,15 @@ class SimHandler(http.server.SimpleHTTPRequestHandler):
         try:
             result = subprocess.run(
                 [SIMULATOR_BIN, config_path, "--json"],
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,  # Ignore warnings
                 text=True,
                 timeout=30
             )
             
-            # Parse JSON output (filter out any warnings)
-            lines = result.stdout.strip().split('\n')
-            json_lines = []
-            for line in lines:
-                if line.strip().startswith('{'):
-                    json_lines.append(line)
-            
-            if json_lines:
-                rust_output = json.loads('\n'.join(json_lines))
-                return self.transform_output(rust_output, strategy)
-            else:
-                return self.error_response("No JSON output from simulator")
+            # Parse JSON output
+            rust_output = json.loads(result.stdout)
+            return self.transform_output(rust_output, strategy)
                 
         except subprocess.TimeoutExpired:
             return self.error_response("Simulation timed out")
